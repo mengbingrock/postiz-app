@@ -25,6 +25,7 @@ import { SkoolDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-setting
 import { WhopDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/whop.dto';
 import { MeweDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/mewe.dto';
 import { TumblrDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/tumblr.dto';
+import { TajimaWebsiteDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/tajima.website.dto';
 import { RedNoteDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/rednote.dto';
 
 export type ProviderExtension<T extends string, M> = { __type: T } & M;
@@ -63,6 +64,7 @@ export type AllProvidersSettings =
   | ProviderExtension<'skool', SkoolDto>
   | ProviderExtension<'mewe', MeweDto>
   | ProviderExtension<'tumblr', TumblrDto>
+  | ProviderExtension<'tajima-website', TajimaWebsiteDto>
   | ProviderExtension<'rednote', RedNoteDto>
   | ProviderExtension<'whop', WhopDto>;
 
@@ -105,6 +107,7 @@ export const allProviders = (setEmpty?: any) => {
     { value: WhopDto, name: 'whop' },
     { value: MeweDto, name: 'mewe' },
     { value: TumblrDto, name: 'tumblr' },
+    { value: TajimaWebsiteDto, name: 'tajima-website' },
     { value: RedNoteDto, name: 'rednote' },
   ].filter((f) => f.value);
 };

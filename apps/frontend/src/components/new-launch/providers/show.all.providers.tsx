@@ -40,6 +40,7 @@ import SkoolProvider from '@gitroom/frontend/components/new-launch/providers/sko
 import WhopProvider from '@gitroom/frontend/components/new-launch/providers/whop/whop.provider';
 import MeweProvider from '@gitroom/frontend/components/new-launch/providers/mewe/mewe.provider';
 import TumblrProvider from '@gitroom/frontend/components/new-launch/providers/tumblr/tumblr.provider';
+import TajimaWebsiteProvider from '@gitroom/frontend/components/new-launch/providers/tajima-website/tajima.website.provider';
 import RedNoteProvider from '@gitroom/frontend/components/new-launch/providers/rednote/rednote.provider';
 
 export const Providers = [
@@ -182,6 +183,10 @@ export const Providers = [
   {
     identifier: 'tumblr',
     component: TumblrProvider,
+  },
+  {
+    identifier: 'tajima-website',
+    component: TajimaWebsiteProvider,
   },
   {
     identifier: 'rednote',

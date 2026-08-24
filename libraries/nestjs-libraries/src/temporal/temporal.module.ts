@@ -6,6 +6,11 @@ export const getTemporalModule = (
   path?: string,
   activityClasses?: any[]
 ) => {
+  type WorkerQueueIntegration = {
+    identifier: string;
+    maxConcurrentJob?: number;
+  };
+
   // Queues this worker server should NOT run, comma-separated
   // (e.g. EXCLUDE_QUEUE="reddit,x,twitch"). Use it to pin a queue to a single
   // server: exclude it on every server except the one that should own it.
@@ -23,6 +28,26 @@ export const getTemporalModule = (
     Number(process.env.WORKER_CONCURRENCY_DIVIDER) || 1
   );
 
+  // Providers that share a prefix (for example tiktok and tiktok-business)
+  // use the same activity queue. Prefer the base provider when it exists, but
+  // still register a queue for standalone hyphenated providers such as
+  // tajima-website.
+  const workerQueues = [
+    { identifier: 'main', maxConcurrentJob: undefined },
+    ...socialIntegrationList,
+  ]
+    .map((integration) => ({
+      integration,
+      taskQueue: integration.identifier.split('-')[0],
+    }))
+    .reduce((queues, entry) => {
+      const current = queues.get(entry.taskQueue);
+      if (!current || entry.integration.identifier === entry.taskQueue) {
+        queues.set(entry.taskQueue, entry);
+      }
+      return queues;
+    }, new Map<string, { integration: WorkerQueueIntegration; taskQueue: string }>());
+
   return TemporalModule.register({
     isGlobal: true,
     connection: {
@@ -37,15 +62,7 @@ export const getTemporalModule = (
     logLevel: 'error',
     ...(isWorkers
       ? {
-          workers: [
-            { identifier: 'main', maxConcurrentJob: undefined },
-            ...socialIntegrationList,
-          ]
-            .filter((f) => f.identifier.indexOf('-') === -1)
-            .map((integration) => ({
-              integration,
-              taskQueue: integration.identifier.split('-')[0],
-            }))
+          workers: [...workerQueues.values()]
             .filter(({ taskQueue }) => !excludeQueues.includes(taskQueue))
             .map(({ integration, taskQueue }) => {
               // Split the per-provider cap across the servers sharing this
