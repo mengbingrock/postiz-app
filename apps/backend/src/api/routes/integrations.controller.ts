@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Delete,
   Get,
@@ -35,6 +36,7 @@ import {
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 import { uniqBy } from 'lodash';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
+import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -45,6 +47,57 @@ export class IntegrationsController {
     private _postService: PostsService,
     private _refreshIntegrationService: RefreshIntegrationService
   ) {}
+
+  private redNoteProvider() {
+    return this._integrationManager.getSocialIntegration(
+      'rednote'
+    ) as RedNoteProvider;
+  }
+
+  @Post('/rednote/login/start')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async startRedNoteLogin(
+    @GetOrgFromRequest() org: Organization,
+    @Body()
+    body: {
+      binaryPath?: string;
+      mcpEndpoint?: string;
+      profileName?: string;
+    }
+  ) {
+    try {
+      return await this.redNoteProvider().startInteractiveLogin(org.id, body);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Unable to start RedNote login.'
+      );
+    }
+  }
+
+  @Get('/rednote/login/status')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  getRedNoteLoginStatus(@GetOrgFromRequest() org: Organization) {
+    return this.redNoteProvider().getInteractiveLoginStatus(org.id);
+  }
+
+  @Post('/rednote/mcp/start')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async startRedNoteMcp(
+    @Body()
+    body: {
+      binaryPath?: string;
+      mcpEndpoint?: string;
+      profileName?: string;
+    }
+  ) {
+    try {
+      return await this.redNoteProvider().startMcpForSetup(body);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Unable to start RedNote MCP.'
+      );
+    }
+  }
 
   @Post('/provider/:id/connect')
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])

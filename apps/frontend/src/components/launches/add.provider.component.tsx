@@ -19,6 +19,7 @@ import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import clsx from 'clsx';
 import copy from 'copy-to-clipboard';
 import { capitalize } from 'lodash';
+import { RedNoteConnectionSetup } from '@gitroom/frontend/components/launches/rednote.connection.setup';
 const resolver = classValidatorResolver(ApiKeyDto);
 
 export const useAddProvider = (update?: () => void, invite?: boolean) => {
@@ -392,6 +393,7 @@ export const AddProviderComponent: FC<{
       key: string;
       label: string;
       validation: string;
+      defaultValue?: string;
       type: 'text' | 'password';
       hint?: string;
     }>;
@@ -651,12 +653,20 @@ export const AddProviderComponent: FC<{
               <div
                 {...(isMobile ? { className: 'h-full bg-black p-[20px]' } : {})}
               >
-                <CustomVariables
-                  identifier={identifier}
-                  gotoUrl={(url: string) => router.push(url)}
-                  variables={customFields}
-                  onboarding={onboarding}
-                />
+                {identifier === 'rednote' ? (
+                  <RedNoteConnectionSetup
+                    gotoUrl={(url: string) => router.push(url)}
+                    variables={customFields}
+                    onboarding={onboarding}
+                  />
+                ) : (
+                  <CustomVariables
+                    identifier={identifier}
+                    gotoUrl={(url: string) => router.push(url)}
+                    variables={customFields}
+                    onboarding={onboarding}
+                  />
+                )}
               </div>
             ),
           });
