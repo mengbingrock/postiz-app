@@ -18,6 +18,7 @@ services:
 
       # === Storage Settings
       STORAGE_PROVIDER: 'local'
+      POSTIZ_CONFIG_DIR: '/config'
       UPLOAD_DIRECTORY: '/uploads'
       NEXT_PUBLIC_UPLOAD_DIRECTORY: '/uploads'
 

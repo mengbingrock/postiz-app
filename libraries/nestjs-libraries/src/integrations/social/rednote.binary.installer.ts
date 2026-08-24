@@ -1,7 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { access, chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import {
+  access,
+  chmod,
+  copyFile,
+  mkdir,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const RELEASE_REPOSITORY = 'xpzouying/xiaohongshu-mcp';
 export const DEFAULT_REDNOTE_RELEASE = 'v2.5.0';
@@ -26,6 +37,7 @@ type GithubRelease = {
 
 export type RedNoteBinaryPaths = {
   cookiePath: string;
+  dataDirectory: string;
   installDirectory: string;
   loginPath: string;
   mcpPath: string;
@@ -73,21 +85,28 @@ export const redNoteBinaryPaths = (
 ): RedNoteBinaryPaths => {
   const assets = redNotePlatformAssets();
   const releaseTag = process.env.XHS_MCP_VERSION || DEFAULT_REDNOTE_RELEASE;
+  const postizConfigDirectory = resolve(
+    process.env.POSTIZ_CONFIG_DIR || join(homedir(), '.postiz')
+  );
+  const redNoteDataDirectory = join(postizConfigDirectory, 'rednote');
   const defaultDirectory =
-    process.env.XHS_MCP_INSTALL_DIR ||
-    join(homedir(), '.postiz', 'rednote', releaseTag);
-  const mcpPath =
+    process.env.XHS_MCP_INSTALL_DIR || join(redNoteDataDirectory, releaseTag);
+  const mcpPath = resolve(
     binaryOverride ||
-    process.env.XHS_MCP_BINARY ||
-    join(defaultDirectory, assets.mcp);
+      process.env.XHS_MCP_BINARY ||
+      join(defaultDirectory, assets.mcp)
+  );
   const installDirectory = dirname(mcpPath);
 
   return {
-    cookiePath:
-      process.env.XHS_COOKIES_PATH || join(installDirectory, 'cookies.json'),
+    cookiePath: resolve(
+      process.env.XHS_COOKIES_PATH || join(redNoteDataDirectory, 'cookies.json')
+    ),
+    dataDirectory: redNoteDataDirectory,
     installDirectory,
-    loginPath:
-      process.env.XHS_LOGIN_BINARY || join(installDirectory, assets.login),
+    loginPath: resolve(
+      process.env.XHS_LOGIN_BINARY || join(installDirectory, assets.login)
+    ),
     mcpPath,
     platformLabel: assets.label,
     releaseTag,
@@ -100,6 +119,71 @@ const exists = async (path: string) => {
     return true;
   } catch {
     return false;
+  }
+};
+
+const migrateLegacyCookie = async (paths: RedNoteBinaryPaths) => {
+  if (await exists(paths.cookiePath)) {
+    return;
+  }
+
+  const candidates = new Set([join(paths.installDirectory, 'cookies.json')]);
+  const legacyDataDirectories = new Set([
+    paths.dataDirectory,
+    join(homedir(), '.postiz', 'rednote'),
+  ]);
+  for (const dataDirectory of legacyDataDirectories) {
+    try {
+      const entries = await readdir(dataDirectory, {
+        withFileTypes: true,
+      });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          candidates.add(join(dataDirectory, entry.name, 'cookies.json'));
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
+  const legacyCookies = (
+    await Promise.all(
+      [...candidates]
+        .filter((candidate) => candidate !== paths.cookiePath)
+        .map(async (candidate) => {
+          try {
+            return { candidate, modifiedAt: (await stat(candidate)).mtimeMs };
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+              return undefined;
+            }
+            throw error;
+          }
+        })
+    )
+  )
+    .filter((item) => item !== undefined)
+    .sort((left, right) => right.modifiedAt - left.modifiedAt);
+
+  for (const { candidate } of legacyCookies) {
+    try {
+      await copyFile(candidate, paths.cookiePath, constants.COPYFILE_EXCL);
+      if (process.platform !== 'win32') {
+        await chmod(paths.cookiePath, 0o600);
+      }
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST') {
+        return;
+      }
+      if (code !== 'ENOENT') {
+        throw error;
+      }
+    }
   }
 };
 
@@ -219,6 +303,7 @@ const downloadAsset = async (
 const installMissingBinaries = async (paths: RedNoteBinaryPaths) => {
   const assets = redNotePlatformAssets();
   await mkdir(dirname(paths.cookiePath), { recursive: true, mode: 0o700 });
+  await migrateLegacyCookie(paths);
   const [hasMcp, hasLogin] = await Promise.all([
     exists(paths.mcpPath),
     exists(paths.loginPath),
