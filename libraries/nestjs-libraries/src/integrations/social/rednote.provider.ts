@@ -20,6 +20,10 @@ import { RedNoteDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-setti
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { Integration } from '@prisma/client';
 import { createHash } from 'node:crypto';
+import {
+  ensureRedNoteBinaries,
+  redNoteBinaryPaths,
+} from '@gitroom/nestjs-libraries/integrations/social/rednote.binary.installer';
 
 type RedNoteCredentials = {
   binaryPath: string;
@@ -38,13 +42,7 @@ type McpEnvelope = {
   error?: { code?: number; message?: string; data?: unknown };
 };
 
-const DEFAULT_BINARY_PATH = resolve(
-  process.cwd(),
-  '../../..',
-  'xiaohongshu-mcp-bin/v2.5.0/xiaohongshu-mcp-darwin-arm64'
-);
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
-const DEFAULT_LOGIN_FILENAME = 'xiaohongshu-login-darwin-arm64';
 const startingServers = new Map<string, Promise<void>>();
 type InteractiveLogin = {
   status: 'idle' | 'running' | 'success' | 'error';
@@ -114,7 +112,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         binaryPath:
           parsed.binaryPath ||
           process.env.XHS_MCP_BINARY ||
-          DEFAULT_BINARY_PATH,
+          redNoteBinaryPaths().mcpPath,
         mcpEndpoint:
           parsed.mcpEndpoint ||
           process.env.XHS_MCP_ENDPOINT ||
@@ -132,7 +130,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     value?: Partial<RedNoteCredentials>
   ): RedNoteCredentials {
     const configuredBinary =
-      process.env.XHS_MCP_BINARY || DEFAULT_BINARY_PATH;
+      process.env.XHS_MCP_BINARY || redNoteBinaryPaths().mcpPath;
     const binaryPath = value?.binaryPath || configuredBinary;
     if (resolve(binaryPath) !== resolve(configuredBinary)) {
       throw new Error(
@@ -158,24 +156,36 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     value?: Partial<RedNoteCredentials>
   ) {
     const current = interactiveLogins.get(key);
-    if (current?.status === 'running' && current.child?.exitCode === null) {
+    if (current?.status === 'running') {
       return this.getInteractiveLoginStatus(key);
     }
 
     const credentials = this.setupCredentials(value);
-    const workingDirectory = dirname(credentials.binaryPath);
-    const loginPath =
-      process.env.XHS_LOGIN_BINARY ||
-      join(workingDirectory, DEFAULT_LOGIN_FILENAME);
-    await access(credentials.binaryPath);
-    await access(loginPath);
+    interactiveLogins.set(key, {
+      status: 'running',
+      message: 'Installing and verifying the RedNote tools if needed…',
+    });
+
+    let paths;
+    try {
+      paths = await ensureRedNoteBinaries(credentials.binaryPath);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to install the RedNote tools.';
+      interactiveLogins.set(key, { status: 'error', message });
+      throw error;
+    }
+    const workingDirectory = paths.installDirectory;
+    const loginPath = paths.loginPath;
 
     // Force the upstream login utility to present a fresh sign-in instead of
     // silently reusing the previous account. Keep a recoverable copy in case
     // the user closes the window before authentication completes.
-    const cookiePath = join(workingDirectory, 'cookies.json');
+    const cookiePath = paths.cookiePath;
     const backupCookiePath = join(
-      workingDirectory,
+      dirname(cookiePath),
       'cookies.postiz-backup.json'
     );
     let hasCookieBackup = false;
@@ -192,6 +202,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       detached: false,
       stdio: 'ignore',
       windowsHide: false,
+      env: { ...process.env, COOKIES_PATH: cookiePath },
     });
     interactiveLogins.set(key, {
       status: 'running',
@@ -210,7 +221,9 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     });
     child.once('exit', (code, signal) => {
       if (code === 0) {
-        chmod(cookiePath, 0o600).catch(() => undefined);
+        if (process.platform !== 'win32') {
+          chmod(cookiePath, 0o600).catch(() => undefined);
+        }
         interactiveLogins.set(key, {
           status: 'success',
           message: 'Login cookie saved. You can now start MCP.',
@@ -415,16 +428,17 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     if (!isAbsolute(credentials.binaryPath)) {
       throw new Error('RedNote MCP binary path must be absolute.');
     }
-    await access(credentials.binaryPath);
+    const paths = await ensureRedNoteBinaries(credentials.binaryPath);
 
     const port = endpoint.port || '80';
     const child = spawn(
-      credentials.binaryPath,
+      paths.mcpPath,
       ['-headless=true', '-port', `:${port}`],
       {
-        cwd: dirname(credentials.binaryPath),
+        cwd: paths.installDirectory,
         detached: true,
         stdio: 'ignore',
+        env: { ...process.env, COOKIES_PATH: paths.cookiePath },
       }
     );
     child.once('error', () => undefined);
@@ -723,14 +737,6 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
 
   async customFields() {
     return [
-      {
-        key: 'binaryPath',
-        label: 'Xiaohongshu MCP binary path',
-        type: 'text' as const,
-        validation: '/.+/',
-        defaultValue: process.env.XHS_MCP_BINARY || DEFAULT_BINARY_PATH,
-        hint: 'Absolute path to the verified precompiled MCP service binary.',
-      },
       {
         key: 'mcpEndpoint',
         label: 'Local MCP endpoint',

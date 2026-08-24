@@ -42,7 +42,7 @@ export const RedNoteConnectionSetup: FC<{
   );
   const [status, setStatus] = useState<SetupStatus>('idle');
   const [message, setMessage] = useState(
-    'Open the RedNote login window and authenticate the account you want Postiz to use.'
+    'Postiz will install the verified tools for this server, then open RedNote login.'
   );
   const [connecting, setConnecting] = useState(false);
 
@@ -74,7 +74,7 @@ export const RedNoteConnectionSetup: FC<{
 
   const startLogin = useCallback(async () => {
     setStatus('running');
-    setMessage('Opening the RedNote login window…');
+    setMessage('Installing verified RedNote tools if needed…');
     try {
       const response = await fetch('/integrations/rednote/login/start', {
         method: 'POST',
@@ -110,9 +110,7 @@ export const RedNoteConnectionSetup: FC<{
       }
 
       const stateResponse = await fetch(
-        `/integrations/social/rednote${
-          onboarding ? '?onboarding=true' : ''
-        }`
+        `/integrations/social/rednote${onboarding ? '?onboarding=true' : ''}`
       );
       const stateData = (await stateResponse.json()) as {
         url?: string;
@@ -141,8 +139,8 @@ export const RedNoteConnectionSetup: FC<{
     status === 'success'
       ? 'text-green-500'
       : status === 'error'
-        ? 'text-red-500'
-        : 'text-textColor/70';
+      ? 'text-red-500'
+      : 'text-textColor/70';
 
   return (
     <div className="flex flex-col gap-[14px] pt-[10px] min-w-[420px] max-w-[520px]">
@@ -154,7 +152,8 @@ export const RedNoteConnectionSetup: FC<{
           <div>
             <div className="font-semibold">Log in and save the cookie</div>
             <div className="text-[12px] text-textColor/60">
-              A visible RedNote browser window will open.
+              Postiz automatically installs the official tools for this server,
+              then opens a visible login window on its desktop.
             </div>
           </div>
         </div>
@@ -163,7 +162,9 @@ export const RedNoteConnectionSetup: FC<{
           onClick={startLogin}
           loading={status === 'running'}
         >
-          {status === 'success' ? 'Log in with another account' : 'Open RedNote Login'}
+          {status === 'success'
+            ? 'Log in with another account'
+            : 'Install Tools & Open Login'}
         </Button>
       </section>
 
@@ -175,7 +176,8 @@ export const RedNoteConnectionSetup: FC<{
           <div>
             <div className="font-semibold">Start MCP and connect Postiz</div>
             <div className="text-[12px] text-textColor/60">
-              MCP must verify the cookie saved in Step 1 before the channel is added.
+              MCP must verify the cookie saved in Step 1 before the channel is
+              added.
             </div>
           </div>
         </div>
