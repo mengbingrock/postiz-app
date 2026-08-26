@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Post,
   Put,
@@ -69,15 +70,18 @@ export class IntegrationsController {
       return await this.redNoteProvider().startInteractiveLogin(org.id, body);
     } catch (error) {
       throw new BadRequestException(
-        error instanceof Error ? error.message : 'Unable to start RedNote login.'
+        error instanceof Error
+          ? error.message
+          : 'Unable to start RedNote login.'
       );
     }
   }
 
   @Get('/rednote/login/status')
+  @Header('Cache-Control', 'no-store, private')
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
-  getRedNoteLoginStatus(@GetOrgFromRequest() org: Organization) {
-    return this.redNoteProvider().getInteractiveLoginStatus(org.id);
+  async getRedNoteLoginStatus(@GetOrgFromRequest() org: Organization) {
+    return await this.redNoteProvider().getInteractiveLoginStatus(org.id);
   }
 
   @Post('/rednote/mcp/start')

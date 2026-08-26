@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   access,
   chmod,
@@ -35,11 +35,23 @@ type McpEnvelope = {
   jsonrpc?: string;
   id?: number;
   result?: {
-    content?: Array<{ type: string; text?: string }>;
+    content?: McpContent[];
     isError?: boolean;
     [key: string]: unknown;
   };
   error?: { code?: number; message?: string; data?: unknown };
+};
+
+type McpContent = {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+};
+
+type McpToolResult = {
+  content: McpContent[];
+  text: string;
 };
 
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
@@ -47,9 +59,20 @@ const startingServers = new Map<string, Promise<void>>();
 type InteractiveLogin = {
   status: 'idle' | 'running' | 'success' | 'error';
   message: string;
-  child?: ChildProcess;
+  credentials?: RedNoteCredentials;
+  qrCode?: string;
+  expiresAt?: number;
+  cookiePath?: string;
+  backupCookiePath?: string;
+  hasCookieBackup?: boolean;
+  statusCheck?: Promise<void>;
+  cancelled?: boolean;
 };
 const interactiveLogins = new Map<string, InteractiveLogin>();
+let activeInteractiveLoginKey: string | undefined;
+
+const QR_CODE_LIFETIME_MS = 4 * 60_000;
+const MAX_QR_CODE_BYTES = 2 * 1024 * 1024;
 
 export class RedNoteProvider extends SocialAbstract implements SocialProvider {
   identifier = 'rednote';
@@ -155,10 +178,17 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     key: string,
     value?: Partial<RedNoteCredentials>
   ) {
-    const current = interactiveLogins.get(key);
-    if (current?.status === 'running') {
-      return this.getInteractiveLoginStatus(key);
+    if (activeInteractiveLoginKey) {
+      const previous = interactiveLogins.get(activeInteractiveLoginKey);
+      if (previous?.status === 'running') {
+        previous.status = 'error';
+        previous.cancelled = true;
+        previous.message =
+          'This QR code was replaced by a newer RedNote login request.';
+        previous.qrCode = undefined;
+      }
     }
+    activeInteractiveLoginKey = key;
 
     const credentials = this.setupCredentials(value);
     interactiveLogins.set(key, {
@@ -175,14 +205,14 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
           ? error.message
           : 'Unable to install the RedNote tools.';
       interactiveLogins.set(key, { status: 'error', message });
+      if (activeInteractiveLoginKey === key) {
+        activeInteractiveLoginKey = undefined;
+      }
       throw error;
     }
-    const workingDirectory = paths.installDirectory;
-    const loginPath = paths.loginPath;
-
-    // Force the upstream login utility to present a fresh sign-in instead of
-    // silently reusing the previous account. Keep a recoverable copy in case
-    // the user closes the window before authentication completes.
+    // Force a fresh sign-in while retaining a recoverable copy if QR creation
+    // fails. The MCP service owns the headless browser and writes the new
+    // cookies after the phone approves the login.
     const cookiePath = paths.cookiePath;
     const backupCookiePath = join(
       dirname(cookiePath),
@@ -195,61 +225,164 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     } catch {
       // A first-time connection has no existing cookie to preserve.
     }
-    await rm(cookiePath, { force: true });
-
-    const child = spawn(loginPath, [], {
-      cwd: workingDirectory,
-      detached: false,
-      stdio: 'ignore',
-      windowsHide: false,
-      env: { ...process.env, COOKIES_PATH: cookiePath },
-    });
-    interactiveLogins.set(key, {
-      status: 'running',
-      message: 'Complete the login in the RedNote browser window.',
-      child,
-    });
-
-    child.once('error', (error) => {
-      interactiveLogins.set(key, {
-        status: 'error',
-        message: `Unable to open RedNote login: ${error.message}`,
-      });
+    try {
       if (hasCookieBackup) {
-        copyFile(backupCookiePath, cookiePath).catch(() => undefined);
+        await this.callMcpTool(credentials, 'delete_cookies', {}, 30_000);
       }
-    });
-    child.once('exit', (code, signal) => {
-      if (code === 0) {
-        if (process.platform !== 'win32') {
-          chmod(cookiePath, 0o600).catch(() => undefined);
-        }
-        interactiveLogins.set(key, {
-          status: 'success',
-          message: 'Login cookie saved. You can now start MCP.',
-        });
-        return;
+      const result = await this.callMcpToolResult(
+        credentials,
+        'get_login_qrcode',
+        {},
+        90_000
+      );
+      const image = result.content.find(
+        (item) => item.type === 'image' && item.data
+      );
+      if (!image?.data) {
+        throw new Error(result.text || 'RedNote MCP did not return a QR code.');
       }
-      interactiveLogins.set(key, {
-        status: 'error',
-        message: `RedNote login closed before completing${
-          signal ? ` (${signal})` : ''
-        }.`,
-      });
-      if (hasCookieBackup) {
-        copyFile(backupCookiePath, cookiePath).catch(() => undefined);
-      }
-    });
 
-    return this.getInteractiveLoginStatus(key);
+      const mimeType = image.mimeType || 'image/png';
+      if (!['image/png', 'image/jpeg'].includes(mimeType)) {
+        throw new Error(`RedNote MCP returned unsupported ${mimeType} data.`);
+      }
+      const base64 = image.data.replace(/\s/g, '');
+      if (
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(base64) ||
+        Buffer.from(base64, 'base64').byteLength > MAX_QR_CODE_BYTES
+      ) {
+        throw new Error('RedNote MCP returned an invalid QR code image.');
+      }
+
+      const state: InteractiveLogin = {
+        status: 'running',
+        message:
+          'Scan this QR code with the Xiaohongshu app and approve the login.',
+        credentials,
+        qrCode: `data:${mimeType};base64,${base64}`,
+        expiresAt: Date.now() + QR_CODE_LIFETIME_MS,
+        cookiePath,
+        backupCookiePath,
+        hasCookieBackup,
+      };
+      interactiveLogins.set(key, state);
+      return this.loginStatusResponse(state);
+    } catch (error) {
+      if (hasCookieBackup) {
+        await copyFile(backupCookiePath, cookiePath).catch(() => undefined);
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to create the RedNote login QR code.';
+      const state: InteractiveLogin = { status: 'error', message };
+      interactiveLogins.set(key, state);
+      if (activeInteractiveLoginKey === key) {
+        activeInteractiveLoginKey = undefined;
+      }
+      throw error;
+    }
   }
 
-  getInteractiveLoginStatus(key: string) {
+  private loginStatusResponse(state: InteractiveLogin) {
+    return {
+      status: state.status,
+      message: state.message,
+      ...(state.qrCode ? { qrCode: state.qrCode } : {}),
+      ...(state.expiresAt
+        ? { expiresAt: new Date(state.expiresAt).toISOString() }
+        : {}),
+    };
+  }
+
+  async getInteractiveLoginStatus(key: string) {
     const state = interactiveLogins.get(key) || {
       status: 'idle' as const,
-      message: 'Start the RedNote login to authenticate an account.',
+      message: 'Request a RedNote QR code to authenticate an account.',
     };
-    return { status: state.status, message: state.message };
+    if (state.status !== 'running') {
+      return this.loginStatusResponse(state);
+    }
+
+    if (!state.statusCheck) {
+      state.statusCheck = this.updateInteractiveLoginStatus(key, state).finally(
+        () => {
+          state.statusCheck = undefined;
+        }
+      );
+    }
+    await state.statusCheck;
+    return this.loginStatusResponse(state);
+  }
+
+  private async updateInteractiveLoginStatus(
+    key: string,
+    state: InteractiveLogin
+  ) {
+    if (!state.credentials) {
+      state.status = 'error';
+      state.message = 'The RedNote login session is missing its configuration.';
+      return;
+    }
+
+    try {
+      const output = await this.callMcpTool(
+        state.credentials,
+        'check_login_status',
+        {},
+        60_000
+      );
+      if (state.cancelled || interactiveLogins.get(key) !== state) {
+        return;
+      }
+      if (!/未登录|not logged in/i.test(output)) {
+        if (state.cookiePath) {
+          await access(state.cookiePath);
+          if (process.platform !== 'win32') {
+            await chmod(state.cookiePath, 0o600);
+          }
+        }
+        const username =
+          output.match(/用户名[:：]\s*([^\n]+)/)?.[1]?.trim() || 'RedNote';
+        state.status = 'success';
+        state.message = `Authenticated as ${username}. The login cookie was saved.`;
+        state.qrCode = undefined;
+        state.expiresAt = undefined;
+        if (state.backupCookiePath) {
+          await rm(state.backupCookiePath, { force: true });
+        }
+        if (activeInteractiveLoginKey === key) {
+          activeInteractiveLoginKey = undefined;
+        }
+        return;
+      }
+    } catch (error) {
+      if (state.cancelled || interactiveLogins.get(key) !== state) {
+        return;
+      }
+      // A fresh status check starts another headless browser and may fail
+      // transiently while the QR browser is completing navigation. Keep the
+      // pending QR usable until its advertised expiry.
+      state.message =
+        error instanceof Error
+          ? `Waiting for approval (${error.message})`
+          : 'Waiting for approval in the Xiaohongshu app.';
+    }
+
+    if (state.expiresAt && Date.now() >= state.expiresAt) {
+      state.status = 'error';
+      state.message =
+        'This QR code expired. Request a new one and scan it again.';
+      state.qrCode = undefined;
+      if (state.hasCookieBackup && state.backupCookiePath && state.cookiePath) {
+        await copyFile(state.backupCookiePath, state.cookiePath).catch(
+          () => undefined
+        );
+      }
+      if (activeInteractiveLoginKey === key) {
+        activeInteractiveLoginKey = undefined;
+      }
+    }
   }
 
   async startMcpForSetup(value?: Partial<RedNoteCredentials>) {
@@ -484,12 +617,12 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return starting;
   }
 
-  private async callMcpTool(
+  private async callMcpToolResult(
     credentials: RedNoteCredentials,
     name: string,
     args: Record<string, unknown>,
     timeoutMs = 120_000
-  ) {
+  ): Promise<McpToolResult> {
     await this.ensureMcpServer(credentials);
     const sessionId = await this.openMcpSession(credentials.mcpEndpoint);
 
@@ -523,10 +656,20 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         throw new Error(text || `RedNote MCP tool ${name} failed.`);
       }
 
-      return text;
+      return { content: result?.content || [], text };
     } finally {
       await this.closeMcpSession(credentials.mcpEndpoint, sessionId);
     }
+  }
+
+  private async callMcpTool(
+    credentials: RedNoteCredentials,
+    name: string,
+    args: Record<string, unknown>,
+    timeoutMs = 120_000
+  ) {
+    return (await this.callMcpToolResult(credentials, name, args, timeoutMs))
+      .text;
   }
 
   async authenticate(params: {

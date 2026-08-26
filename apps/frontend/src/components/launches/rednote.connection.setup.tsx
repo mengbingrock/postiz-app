@@ -11,6 +11,8 @@ type SetupResponse = {
   status?: SetupStatus;
   message?: string | string[];
   username?: string;
+  qrCode?: string;
+  expiresAt?: string;
 };
 
 type Variable = {
@@ -42,8 +44,11 @@ export const RedNoteConnectionSetup: FC<{
   );
   const [status, setStatus] = useState<SetupStatus>('idle');
   const [message, setMessage] = useState(
-    'Postiz will install the verified tools for this server, then open RedNote login.'
+    'Postiz will start a private headless browser and show its Xiaohongshu login QR code here.'
   );
+  const [qrCode, setQrCode] = useState<string>();
+  const [expiresAt, setExpiresAt] = useState<string>();
+  const [starting, setStarting] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   const readStatus = useCallback(async () => {
@@ -54,6 +59,8 @@ export const RedNoteConnectionSetup: FC<{
     }
     setStatus(data.status || 'idle');
     setMessage(responseError(data, 'Waiting for RedNote login.'));
+    setQrCode(data.qrCode);
+    setExpiresAt(data.expiresAt);
     return data.status;
   }, [fetch]);
 
@@ -61,19 +68,34 @@ export const RedNoteConnectionSetup: FC<{
     if (status !== 'running') {
       return;
     }
-    const timer = window.setInterval(() => {
-      readStatus().catch((error) => {
+    let cancelled = false;
+    let timer: number;
+    const poll = async () => {
+      try {
+        await readStatus();
+      } catch (error) {
         setStatus('error');
         setMessage(
           error instanceof Error ? error.message : 'Login status check failed.'
         );
-      });
-    }, 1500);
-    return () => window.clearInterval(timer);
+      } finally {
+        if (!cancelled) {
+          timer = window.setTimeout(poll, 3000);
+        }
+      }
+    };
+    timer = window.setTimeout(poll, 3000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [status, readStatus]);
 
   const startLogin = useCallback(async () => {
+    setStarting(true);
     setStatus('running');
+    setQrCode(undefined);
+    setExpiresAt(undefined);
     setMessage('Installing verified RedNote tools if needed…');
     try {
       const response = await fetch('/integrations/rednote/login/start', {
@@ -82,15 +104,23 @@ export const RedNoteConnectionSetup: FC<{
       });
       const data = (await response.json()) as SetupResponse;
       if (!response.ok) {
-        throw new Error(responseError(data, 'Unable to open RedNote login.'));
+        throw new Error(
+          responseError(data, 'Unable to create the RedNote login QR code.')
+        );
       }
       setStatus(data.status || 'running');
-      setMessage(responseError(data, 'Complete login in the opened window.'));
+      setMessage(responseError(data, 'Scan the Xiaohongshu login QR code.'));
+      setQrCode(data.qrCode);
+      setExpiresAt(data.expiresAt);
     } catch (error) {
       setStatus('error');
       setMessage(
-        error instanceof Error ? error.message : 'Unable to open RedNote login.'
+        error instanceof Error
+          ? error.message
+          : 'Unable to create the RedNote login QR code.'
       );
+    } finally {
+      setStarting(false);
     }
   }, [configuration, fetch]);
 
@@ -152,19 +182,38 @@ export const RedNoteConnectionSetup: FC<{
           <div>
             <div className="font-semibold">Log in and save the cookie</div>
             <div className="text-[12px] text-textColor/60">
-              Postiz automatically installs the official tools for this server,
-              then opens a visible login window on its desktop.
+              Chromium stays headless on the server. Scan the QR code below with
+              the Xiaohongshu mobile app and approve the login.
             </div>
           </div>
         </div>
+        {qrCode ? (
+          <div className="flex flex-col items-center gap-[8px] rounded-[8px] bg-white p-[14px]">
+            <img
+              src={qrCode}
+              alt="Xiaohongshu login QR code"
+              width={260}
+              height={260}
+              className="h-[260px] w-[260px] object-contain"
+            />
+            <div className="text-center text-[12px] text-black/60">
+              {expiresAt
+                ? `Valid until ${new Date(expiresAt).toLocaleTimeString()}`
+                : 'This QR code is valid for about four minutes.'}
+            </div>
+          </div>
+        ) : null}
         <Button
           type="button"
           onClick={startLogin}
-          loading={status === 'running'}
+          loading={starting}
+          disabled={starting || connecting}
         >
-          {status === 'success'
-            ? 'Log in with another account'
-            : 'Install Tools & Open Login'}
+          {status === 'running'
+            ? 'Request a New QR Code'
+            : status === 'success'
+            ? 'Log in with Another Account'
+            : 'Get Xiaohongshu QR Code'}
         </Button>
       </section>
 
@@ -176,8 +225,8 @@ export const RedNoteConnectionSetup: FC<{
           <div>
             <div className="font-semibold">Start MCP and connect Postiz</div>
             <div className="text-[12px] text-textColor/60">
-              MCP must verify the cookie saved in Step 1 before the channel is
-              added.
+              After the scan succeeds, Postiz verifies the cookie saved by the
+              headless browser before adding the channel.
             </div>
           </div>
         </div>
