@@ -119,6 +119,30 @@ export class ChineseInLAProvider
     password: string
   ) {
     const credentials = this.setupCredentials(value);
+    try {
+      const existingLogin = this.parseJson<ChineseInLALoginStatus>(
+        await this.callMcpTool(
+          credentials,
+          'chineseinla_check_login',
+          {},
+          90_000
+        ),
+        'login status'
+      );
+      if (existingLogin.logged_in) {
+        password = '';
+        return {
+          success: true,
+          state: 'authenticated' as const,
+          message:
+            'ChineseInLA is already authenticated. Postiz reused the isolated browser cookie without submitting the entered password.',
+        };
+      }
+    } catch {
+      // A status probe should not prevent a logged-out account from entering
+      // the normal retained-page credential flow below.
+    }
+
     const opened = await this.callMcpToolResult(
       credentials,
       'chineseinla_open_login',
