@@ -76,12 +76,23 @@ export class NoAuthIntegrationsController {
       await ioRedis.del(`login:${body.state}`);
     }
 
-    const details = integrationProvider.externalUrl
+    const externalDetails = integrationProvider.externalUrl
       ? await ioRedis.get(`external:${body.state}`)
       : undefined;
+    const encryptedCustomOAuthDetails =
+      integrationProvider.customOAuthCredentials
+        ? await ioRedis.get(`customOAuth:${body.state}`)
+        : undefined;
+    const customOAuthDetails = encryptedCustomOAuthDetails
+      ? AuthService.fixedDecryption(encryptedCustomOAuthDetails)
+      : undefined;
+    const details = customOAuthDetails || externalDetails;
 
-    if (details) {
+    if (externalDetails) {
       await ioRedis.del(`external:${body.state}`);
+    }
+    if (encryptedCustomOAuthDetails) {
+      await ioRedis.del(`customOAuth:${body.state}`);
     }
 
     const refresh = await ioRedis.get(`refresh:${body.state}`);

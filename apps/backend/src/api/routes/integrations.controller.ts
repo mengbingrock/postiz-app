@@ -29,6 +29,7 @@ import {
 } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
 import { timer } from '@gitroom/helpers/utils/timer';
+import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { TelegramProvider } from '@gitroom/nestjs-libraries/integrations/social/telegram.provider';
 import { MoltbookProvider } from '@gitroom/nestjs-libraries/integrations/social/moltbook.provider';
 import {
@@ -38,6 +39,7 @@ import {
 import { uniqBy } from 'lodash';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
+import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -53,6 +55,140 @@ export class IntegrationsController {
     return this._integrationManager.getSocialIntegration(
       'rednote'
     ) as RedNoteProvider;
+  }
+
+  private chineseInLAProvider() {
+    return this._integrationManager.getSocialIntegration(
+      'chineseinla'
+    ) as ChineseInLAProvider;
+  }
+
+  @Post('/chineseinla/login')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async loginChineseInLA(
+    @Body()
+    body: {
+      username?: string;
+      password?: string;
+      binaryPath?: string;
+      mcpEndpoint?: string;
+      profileName?: string;
+    }
+  ) {
+    const username =
+      typeof body.username === 'string' ? body.username.trim() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    if (!username || username.length > 40) {
+      throw new BadRequestException(
+        'ChineseInLA username is required and must be 40 characters or fewer.'
+      );
+    }
+    if (!password || password.length > 32) {
+      throw new BadRequestException(
+        'ChineseInLA password is required and must be 32 characters or fewer.'
+      );
+    }
+
+    try {
+      return await this.chineseInLAProvider().loginWithPassword(
+        {
+          binaryPath: body.binaryPath,
+          mcpEndpoint: body.mcpEndpoint,
+          profileName: username,
+        },
+        username,
+        password
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'Unable to sign in to ChineseInLA.'
+      );
+    } finally {
+      body.password = '';
+    }
+  }
+
+  private async connectedChineseInLA(orgId: string, integrationId: string) {
+    const integration = await this._integrationService.getIntegrationById(
+      orgId,
+      integrationId
+    );
+    if (!integration || integration.providerIdentifier !== 'chineseinla') {
+      throw new BadRequestException('ChineseInLA channel was not found.');
+    }
+    if (integration.disabled || integration.refreshNeeded) {
+      throw new BadRequestException(
+        'Reconnect the ChineseInLA channel before publishing.'
+      );
+    }
+    return integration;
+  }
+
+  @Get('/chineseinla/:integrationId/forums')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async getChineseInLAForums(
+    @GetOrgFromRequest() org: Organization,
+    @Param('integrationId') integrationId: string
+  ) {
+    const integration = await this.connectedChineseInLA(org.id, integrationId);
+    try {
+      return {
+        forums: await this.chineseInLAProvider().listForums(integration.token),
+      };
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load ChineseInLA forums.'
+      );
+    }
+  }
+
+  @Post('/chineseinla/prepare')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async prepareChineseInLAPost(
+    @GetOrgFromRequest() org: Organization,
+    @Body()
+    body: {
+      integrationId?: string;
+      settings?: {
+        forumId?: number;
+        postType?: 'question' | 'classified' | 'other';
+        title?: string;
+        tags?: string;
+        sourceUrl?: string;
+      };
+      value?: Array<{
+        content?: string;
+        media?: Array<{ path?: string; type?: string }>;
+      }>;
+    }
+  ) {
+    if (!body.integrationId) {
+      throw new BadRequestException('ChineseInLA integration ID is required.');
+    }
+    const integration = await this.connectedChineseInLA(
+      org.id,
+      body.integrationId
+    );
+    try {
+      return await this.chineseInLAProvider().preparePost(
+        integration.token,
+        body.settings as any,
+        body.value || []
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'Unable to prepare the ChineseInLA post.'
+      );
+    }
   }
 
   @Post('/rednote/login/start')
@@ -82,6 +218,27 @@ export class IntegrationsController {
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   async getRedNoteLoginStatus(@GetOrgFromRequest() org: Organization) {
     return await this.redNoteProvider().getInteractiveLoginStatus(org.id);
+  }
+
+  @Post('/rednote/login/otp')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async submitRedNoteLoginCode(
+    @GetOrgFromRequest() org: Organization,
+    @Body() body: { code?: string }
+  ) {
+    try {
+      return await this.redNoteProvider().submitInteractiveLoginCode(
+        org.id,
+        typeof body.code === 'string' ? body.code.trim() : ''
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'Unable to submit the RedNote verification code.'
+      );
+    }
   }
 
   @Post('/rednote/mcp/start')
@@ -291,8 +448,29 @@ export class IntegrationsController {
           }
         : undefined;
 
+      let customOAuthCredentials:
+        | { client_id: string; client_secret: string; instanceUrl: string }
+        | undefined;
+      if (integrationProvider.customOAuthCredentials && refresh) {
+        const existing =
+          await this._integrationService.getIntegrationByInternalId(
+            org.id,
+            refresh
+          );
+        if (
+          existing?.providerIdentifier === integration &&
+          existing.customInstanceDetails
+        ) {
+          customOAuthCredentials = JSON.parse(
+            AuthService.fixedDecryption(existing.customInstanceDetails)
+          );
+        }
+      }
+
+      const clientInformation = customOAuthCredentials || getExternalUrl;
+
       const { codeVerifier, state, url } =
-        await integrationProvider.generateAuthUrl(getExternalUrl);
+        await integrationProvider.generateAuthUrl(clientInformation);
 
       if (refresh) {
         await ioRedis.set(`refresh:${state}`, refresh, 'EX', 3600);
@@ -308,17 +486,96 @@ export class IntegrationsController {
 
       await ioRedis.set(`organization:${state}`, org.id, 'EX', 3600);
       await ioRedis.set(`login:${state}`, codeVerifier, 'EX', 3600);
-      await ioRedis.set(
-        `external:${state}`,
-        JSON.stringify(getExternalUrl),
-        'EX',
-        3600
-      );
+      if (getExternalUrl) {
+        await ioRedis.set(
+          `external:${state}`,
+          JSON.stringify(getExternalUrl),
+          'EX',
+          3600
+        );
+      }
+      if (customOAuthCredentials) {
+        await ioRedis.set(
+          `customOAuth:${state}`,
+          AuthService.fixedEncryption(JSON.stringify(customOAuthCredentials)),
+          'EX',
+          3600
+        );
+      }
 
       return { url };
     } catch (err) {
       return { err: true };
     }
+  }
+
+  @Post('/social/:integration/custom-oauth')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async getCustomOAuthIntegrationUrl(
+    @Param('integration') integration: string,
+    @Body()
+    body: {
+      clientId?: string;
+      clientSecret?: string;
+      redirectUrl?: string;
+      onboarding?: boolean;
+    },
+    @GetOrgFromRequest() org: Organization
+  ) {
+    if (
+      !this._integrationManager
+        .getAllowedSocialsIntegrations()
+        .includes(integration)
+    ) {
+      throw new BadRequestException('Integration not allowed');
+    }
+
+    const integrationProvider =
+      this._integrationManager.getSocialIntegration(integration);
+    if (!integrationProvider.customOAuthCredentials) {
+      throw new BadRequestException(
+        'This integration does not support custom OAuth credentials'
+      );
+    }
+
+    const clientId = body.clientId?.trim() || '';
+    const clientSecret = body.clientSecret?.trim() || '';
+    if (!/^[A-Za-z0-9._-]{5,128}$/.test(clientId)) {
+      throw new BadRequestException('Enter a valid OAuth Client ID');
+    }
+    if (!/^\S{8,512}$/.test(clientSecret)) {
+      throw new BadRequestException('Enter a valid OAuth Client Secret');
+    }
+
+    const clientInformation = {
+      client_id: clientId,
+      client_secret: clientSecret,
+      instanceUrl: process.env.FRONTEND_URL || '',
+    };
+    const credentialError =
+      integrationProvider.validateCustomOAuthCredentials?.(clientInformation);
+    if (credentialError) {
+      throw new BadRequestException(credentialError);
+    }
+    const { codeVerifier, state, url } =
+      await integrationProvider.generateAuthUrl(clientInformation);
+
+    await ioRedis.set(`organization:${state}`, org.id, 'EX', 3600);
+    await ioRedis.set(`login:${state}`, codeVerifier, 'EX', 3600);
+    await ioRedis.set(
+      `customOAuth:${state}`,
+      AuthService.fixedEncryption(JSON.stringify(clientInformation)),
+      'EX',
+      3600
+    );
+    if (body.onboarding) {
+      await ioRedis.set(`onboarding:${state}`, 'true', 'EX', 3600);
+    }
+    if (body.redirectUrl) {
+      await ioRedis.set(`redirect:${state}`, body.redirectUrl, 'EX', 3600);
+    }
+
+    return { url };
   }
 
   @Post('/:id/time')

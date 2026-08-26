@@ -266,10 +266,12 @@ export const ContinueIntegration: FC<{
       facebook: 'Facebook',
       instagram: 'Instagram',
       'linkedin-page': 'LinkedIn',
+      'linkedin-page-byo': 'LinkedIn Page (Own App)',
       youtube: 'YouTube',
       gmb: 'Google Business',
       tumblr: 'Tumblr',
       'tiktok-business': 'TikTok Business',
+      chineseinla: 'ChineseInLA',
     };
     return names[provider] || provider;
   }, [provider]);

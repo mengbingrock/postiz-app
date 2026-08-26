@@ -61,15 +61,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
   oneTimeToken = true;
 
   isBetweenSteps = false;
-  scopes = [
-    'openid',
-    'profile',
-    'w_member_social',
-    'r_basicprofile',
-    'rw_organization_admin',
-    'w_organization_social',
-    'r_organization_social',
-  ];
+  scopes = ['openid', 'profile', 'email', 'w_member_social'];
   override maxConcurrentJob = 2;
   refreshWait = true;
   editor = 'normal' as const;
@@ -1124,7 +1116,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     identifier: 'linkedin-add-comment',
     title: 'Add comments by a different account',
     description: 'Add accounts to comment on your post',
-    pickIntegration: ['linkedin', 'linkedin-page'],
+    pickIntegration: ['linkedin', 'linkedin-page', 'linkedin-page-byo'],
     fields: [
       {
         name: 'comment',
@@ -1165,7 +1157,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     identifier: 'linkedin-repost-post-users',
     title: 'Add Re-posters',
     description: 'Add accounts to repost your post',
-    pickIntegration: ['linkedin', 'linkedin-page'],
+    pickIntegration: ['linkedin', 'linkedin-page', 'linkedin-page-byo'],
     fields: [],
   })
   async repostPostUsers(

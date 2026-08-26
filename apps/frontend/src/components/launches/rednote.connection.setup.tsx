@@ -6,6 +6,17 @@ import { Button } from '@gitroom/react/form/button';
 import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 
 type SetupStatus = 'idle' | 'running' | 'success' | 'error';
+type LoginState =
+  | 'waiting_for_scan'
+  | 'qr_scanned'
+  | 'otp_required'
+  | 'submitting_otp'
+  | 'otp_submitted'
+  | 'captcha_required'
+  | 'authenticated'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
 
 type SetupResponse = {
   status?: SetupStatus;
@@ -13,6 +24,10 @@ type SetupResponse = {
   username?: string;
   qrCode?: string;
   expiresAt?: string;
+  loginState?: LoginState;
+  otpRequired?: boolean;
+  otpAttempts?: number;
+  otpMaxAttempts?: number;
 };
 
 type Variable = {
@@ -48,7 +63,12 @@ export const RedNoteConnectionSetup: FC<{
   );
   const [qrCode, setQrCode] = useState<string>();
   const [expiresAt, setExpiresAt] = useState<string>();
+  const [loginState, setLoginState] = useState<LoginState>();
+  const [otpCode, setOtpCode] = useState('');
+  const [otpAttempts, setOtpAttempts] = useState(0);
+  const [otpMaxAttempts, setOtpMaxAttempts] = useState(3);
   const [starting, setStarting] = useState(false);
+  const [submittingOtp, setSubmittingOtp] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   const readStatus = useCallback(async () => {
@@ -61,6 +81,12 @@ export const RedNoteConnectionSetup: FC<{
     setMessage(responseError(data, 'Waiting for RedNote login.'));
     setQrCode(data.qrCode);
     setExpiresAt(data.expiresAt);
+    setLoginState(data.loginState);
+    setOtpAttempts(data.otpAttempts || 0);
+    setOtpMaxAttempts(data.otpMaxAttempts || 3);
+    if (!data.otpRequired) {
+      setOtpCode('');
+    }
     return data.status;
   }, [fetch]);
 
@@ -96,6 +122,9 @@ export const RedNoteConnectionSetup: FC<{
     setStatus('running');
     setQrCode(undefined);
     setExpiresAt(undefined);
+    setLoginState(undefined);
+    setOtpCode('');
+    setOtpAttempts(0);
     setMessage('Installing verified RedNote tools if needed…');
     try {
       const response = await fetch('/integrations/rednote/login/start', {
@@ -112,6 +141,9 @@ export const RedNoteConnectionSetup: FC<{
       setMessage(responseError(data, 'Scan the Xiaohongshu login QR code.'));
       setQrCode(data.qrCode);
       setExpiresAt(data.expiresAt);
+      setLoginState(data.loginState);
+      setOtpAttempts(data.otpAttempts || 0);
+      setOtpMaxAttempts(data.otpMaxAttempts || 3);
     } catch (error) {
       setStatus('error');
       setMessage(
@@ -123,6 +155,48 @@ export const RedNoteConnectionSetup: FC<{
       setStarting(false);
     }
   }, [configuration, fetch]);
+
+  const submitOtp = useCallback(async () => {
+    if (!/^\d{6}$/.test(otpCode)) {
+      setMessage('Enter the six-digit verification code from Xiaohongshu.');
+      return;
+    }
+
+    const code = otpCode;
+    setOtpCode('');
+    setSubmittingOtp(true);
+    setMessage('Submitting the verification code securely…');
+    try {
+      const response = await fetch('/integrations/rednote/login/otp', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+      });
+      const data = (await response.json()) as SetupResponse;
+      if (!response.ok) {
+        throw new Error(
+          responseError(data, 'Unable to submit the verification code.')
+        );
+      }
+      setStatus(data.status || 'running');
+      setMessage(
+        responseError(
+          data,
+          'Verification code submitted. Waiting for login confirmation…'
+        )
+      );
+      setLoginState(data.loginState);
+      setOtpAttempts(data.otpAttempts || 0);
+      setOtpMaxAttempts(data.otpMaxAttempts || 3);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to submit the verification code.'
+      );
+    } finally {
+      setSubmittingOtp(false);
+    }
+  }, [fetch, otpCode]);
 
   const startMcpAndConnect = useCallback(async () => {
     setConnecting(true);
@@ -171,6 +245,10 @@ export const RedNoteConnectionSetup: FC<{
       : status === 'error'
       ? 'text-red-500'
       : 'text-textColor/70';
+  const showOtp =
+    loginState === 'otp_required' ||
+    loginState === 'submitting_otp' ||
+    loginState === 'otp_submitted';
 
   return (
     <div className="flex flex-col gap-[14px] pt-[10px] min-w-[420px] max-w-[520px]">
@@ -202,6 +280,59 @@ export const RedNoteConnectionSetup: FC<{
                 : 'This QR code is valid for about four minutes.'}
             </div>
           </div>
+        ) : null}
+        {showOtp ? (
+          <form
+            className="flex flex-col gap-[8px] rounded-[8px] border border-orange-500/40 bg-orange-500/10 p-[12px]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitOtp();
+            }}
+          >
+            <div>
+              <div className="text-[13px] font-semibold">
+                Xiaohongshu verification code
+              </div>
+              <div className="text-[12px] text-textColor/65">
+                Enter the six-digit code sent by Xiaohongshu. It is submitted
+                directly to the retained headless browser and is not saved by
+                Postiz.
+              </div>
+            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={otpCode}
+              disabled={
+                loginState !== 'otp_required' || submittingOtp || connecting
+              }
+              onChange={(event) =>
+                setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+              }
+              aria-label="Xiaohongshu six-digit verification code"
+              placeholder="000000"
+              className="h-[42px] rounded-[8px] border border-newTableBorder bg-newBgColorInner px-[16px] text-center text-[20px] tracking-[0.35em] text-textColor outline-none disabled:opacity-60"
+            />
+            <div className="flex items-center justify-between gap-[10px]">
+              <div className="text-[11px] text-textColor/60">
+                Attempts: {otpAttempts}/{otpMaxAttempts}
+              </div>
+              <Button
+                type="submit"
+                loading={submittingOtp}
+                disabled={
+                  loginState !== 'otp_required' ||
+                  submittingOtp ||
+                  otpCode.length !== 6
+                }
+              >
+                Submit Code
+              </Button>
+            </div>
+          </form>
         ) : null}
         <Button
           type="button"

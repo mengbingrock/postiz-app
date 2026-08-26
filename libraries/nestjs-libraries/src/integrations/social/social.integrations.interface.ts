@@ -14,7 +14,10 @@ export interface IAuthenticator {
     },
     clientInformation?: ClientInformation
   ): Promise<AuthTokenDetails | string>;
-  refreshToken(refreshToken: string): Promise<AuthTokenDetails>;
+  refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails>;
   reConnect?(
     id: string,
     requiredId: string,
@@ -190,6 +193,15 @@ export interface SocialProvider
   ): Promise<PendingCheckResponse>;
   isWeb3?: boolean;
   isChromeExtension?: boolean;
+  /**
+   * Allows an OAuth provider to accept a user-owned client id and secret.
+   * Credentials are sent to the authenticated backend, encrypted while the
+   * OAuth flow is pending, and persisted encrypted with the integration.
+   */
+  customOAuthCredentials?: boolean;
+  validateCustomOAuthCredentials?(
+    clientInformation: ClientInformation
+  ): string | undefined;
   extensionCookies?: { name: string; domain: string }[];
   editor: 'none' | 'normal' | 'markdown' | 'html';
   customFields?: () => Promise<

@@ -1,0 +1,31 @@
+paperclip.attymate.com {
+	encode zstd gzip
+	reverse_proxy paperclip:3100 {
+		header_up X-Forwarded-Proto https
+	}
+}
+
+post.truegrit.dev {
+	encode zstd gzip
+
+	handle_path /api/* {
+		reverse_proxy 172.18.0.1:3003
+	}
+
+	handle {
+		reverse_proxy 172.18.0.1:4200
+	}
+}
+
+http://post.truegrit.dev {
+	redir https://post.truegrit.dev{uri} permanent
+}
+
+postiz.44.240.150.216.nip.io {
+	redir https://post.truegrit.dev{uri} permanent
+}
+
+# fallback for direct-IP access until DNS swaps (returns 404 by default)
+:80 {
+	respond "Paperclip - configure DNS for paperclip.attymate.com" 404
+}

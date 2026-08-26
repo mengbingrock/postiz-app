@@ -11,6 +11,7 @@ export const continueProviderList = {
   instagram: InstagramContinue,
   facebook: FacebookContinue,
   'linkedin-page': LinkedinContinue,
+  'linkedin-page-byo': LinkedinContinue,
   gmb: GmbContinue,
   youtube: YoutubeContinue,
   tumblr: TumblrContinue,

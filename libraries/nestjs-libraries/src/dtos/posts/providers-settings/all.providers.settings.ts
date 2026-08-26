@@ -27,6 +27,7 @@ import { MeweDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings
 import { TumblrDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/tumblr.dto';
 import { TajimaWebsiteDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/tajima.website.dto';
 import { RedNoteDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/rednote.dto';
+import { ChineseInLADto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/chineseinla.dto';
 
 export type ProviderExtension<T extends string, M> = { __type: T } & M;
 export type AllProvidersSettings =
@@ -44,6 +45,7 @@ export type AllProvidersSettings =
   | ProviderExtension<'x', XDto>
   | ProviderExtension<'linkedin', LinkedinDto>
   | ProviderExtension<'linkedin-page', LinkedinDto>
+  | ProviderExtension<'linkedin-page-byo', LinkedinDto>
   | ProviderExtension<'instagram', InstagramDto>
   | ProviderExtension<'instagram-standalone', InstagramDto>
   | ProviderExtension<'medium', MediumSettingsDto>
@@ -66,6 +68,7 @@ export type AllProvidersSettings =
   | ProviderExtension<'tumblr', TumblrDto>
   | ProviderExtension<'tajima-website', TajimaWebsiteDto>
   | ProviderExtension<'rednote', RedNoteDto>
+  | ProviderExtension<'chineseinla', ChineseInLADto>
   | ProviderExtension<'whop', WhopDto>;
 
 type None = NonNullable<unknown>;
@@ -86,6 +89,7 @@ export const allProviders = (setEmpty?: any) => {
     { value: XDto, name: 'x' },
     { value: LinkedinDto, name: 'linkedin' },
     { value: LinkedinDto, name: 'linkedin-page' },
+    { value: LinkedinDto, name: 'linkedin-page-byo' },
     { value: InstagramDto, name: 'instagram' },
     { value: InstagramDto, name: 'instagram-standalone' },
     { value: MediumSettingsDto, name: 'medium' },
@@ -109,6 +113,7 @@ export const allProviders = (setEmpty?: any) => {
     { value: TumblrDto, name: 'tumblr' },
     { value: TajimaWebsiteDto, name: 'tajima-website' },
     { value: RedNoteDto, name: 'rednote' },
+    { value: ChineseInLADto, name: 'chineseinla' },
   ].filter((f) => f.value);
 };
 

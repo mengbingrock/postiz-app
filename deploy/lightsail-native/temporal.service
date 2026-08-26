@@ -1,0 +1,16 @@
+[Unit]
+Description=Minimal persistent Temporal server for Postiz
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/postiz/temporal
+ExecStart=/usr/local/bin/temporal server start-dev --ip 127.0.0.1 --port 7233 --db-filename /opt/postiz/temporal/temporal.db --headless --log-level warn
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

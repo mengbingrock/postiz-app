@@ -42,6 +42,7 @@ import MeweProvider from '@gitroom/frontend/components/new-launch/providers/mewe
 import TumblrProvider from '@gitroom/frontend/components/new-launch/providers/tumblr/tumblr.provider';
 import TajimaWebsiteProvider from '@gitroom/frontend/components/new-launch/providers/tajima-website/tajima.website.provider';
 import RedNoteProvider from '@gitroom/frontend/components/new-launch/providers/rednote/rednote.provider';
+import ChineseInLAProvider from '@gitroom/frontend/components/new-launch/providers/chineseinla/chineseinla.provider';
 
 export const Providers = [
   {
@@ -58,6 +59,10 @@ export const Providers = [
   },
   {
     identifier: 'linkedin-page',
+    component: LinkedinProvider,
+  },
+  {
+    identifier: 'linkedin-page-byo',
     component: LinkedinProvider,
   },
   {
@@ -191,6 +196,10 @@ export const Providers = [
   {
     identifier: 'rednote',
     component: RedNoteProvider,
+  },
+  {
+    identifier: 'chineseinla',
+    component: ChineseInLAProvider,
   },
 ];
 export const ShowAllProviders = forwardRef((props, ref) => {

@@ -20,6 +20,9 @@ import clsx from 'clsx';
 import copy from 'copy-to-clipboard';
 import { capitalize } from 'lodash';
 import { RedNoteConnectionSetup } from '@gitroom/frontend/components/launches/rednote.connection.setup';
+import { FacebookConnectionSetup } from '@gitroom/frontend/components/launches/facebook.connection.setup';
+import { LinkedinPageByoConnectionSetup } from '@gitroom/frontend/components/launches/linkedin.page.byo.connection.setup';
+import { ChineseInLAConnectionSetup } from '@gitroom/frontend/components/launches/chineseinla.connection.setup';
 const resolver = classValidatorResolver(ApiKeyDto);
 
 export const useAddProvider = (update?: () => void, invite?: boolean) => {
@@ -385,6 +388,7 @@ export const AddProviderComponent: FC<{
     isExternal: boolean;
     isWeb3: boolean;
     isChromeExtension?: boolean;
+    customOAuthCredentials?: boolean;
     extensionCookies?: Array<{
       name: string;
       domain: string;
@@ -641,6 +645,43 @@ export const AddProviderComponent: FC<{
           });
           return;
         }
+        if (identifier === 'facebook') {
+          modal.openModal({
+            title: t('connect_facebook_page', 'Connect Facebook Page'),
+            withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
+            classNames: {
+              modal: 'bg-transparent text-textColor',
+            },
+            children: (
+              <FacebookConnectionSetup
+                onboarding={onboarding}
+                redirectUrl={isMobile ? 'postiz://integrations' : undefined}
+              />
+            ),
+          });
+          return;
+        }
+        if (identifier === 'linkedin-page-byo') {
+          modal.openModal({
+            title: t(
+              'connect_linkedin_page_own_app',
+              'Connect LinkedIn Page (Own App)'
+            ),
+            withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
+            classNames: {
+              modal: 'bg-transparent text-textColor',
+            },
+            children: (
+              <LinkedinPageByoConnectionSetup
+                onboarding={onboarding}
+                redirectUrl={isMobile ? 'postiz://integrations' : undefined}
+              />
+            ),
+          });
+          return;
+        }
         if (customFields) {
           modal.openModal({
             title: t('add_provider_title', 'Add Provider'),
@@ -655,6 +696,12 @@ export const AddProviderComponent: FC<{
               >
                 {identifier === 'rednote' ? (
                   <RedNoteConnectionSetup
+                    gotoUrl={(url: string) => router.push(url)}
+                    variables={customFields}
+                    onboarding={onboarding}
+                  />
+                ) : identifier === 'chineseinla' ? (
+                  <ChineseInLAConnectionSetup
                     gotoUrl={(url: string) => router.push(url)}
                     variables={customFields}
                     onboarding={onboarding}
@@ -700,6 +747,7 @@ export const AddProviderComponent: FC<{
                 !item.isExternal &&
                 !item.isWeb3 &&
                 !item.isChromeExtension &&
+                !item.customOAuthCredentials &&
                 !item.customFields
               );
             })

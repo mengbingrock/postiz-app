@@ -298,6 +298,12 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
         })),
       }));
 
+      const chineseInLAPosts = posts.filter(
+        (post: any) =>
+          integrationById(post.integration.id)?.integration.identifier ===
+          'chineseinla'
+      );
+
       if (!dummy) {
         const checkAllValid = await (
           await fetch('/posts/valid', {
@@ -372,11 +378,176 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
         }
       }
 
+      if (!dummy && chineseInLAPosts.length) {
+        if (type !== 'now') {
+          if (type !== 'draft') {
+            toaster.show(
+              'ChineseInLA currently supports immediate publishing only. Choose Publish now or save this post as a draft.',
+              'warning'
+            );
+            setLoading(false);
+            return;
+          }
+        } else {
+          if (chineseInLAPosts.length > 1) {
+            toaster.show(
+              'Publish to one ChineseInLA account at a time so the prepared form can be reviewed safely.',
+              'warning'
+            );
+            setLoading(false);
+            return;
+          }
+
+          const chineseInLAPost = chineseInLAPosts[0];
+          try {
+            const response = await fetch('/integrations/chineseinla/prepare', {
+              method: 'POST',
+              body: JSON.stringify({
+                integrationId: chineseInLAPost.integration.id,
+                settings: chineseInLAPost.settings,
+                value: chineseInLAPost.value.map((item: any) => ({
+                  content: item.content,
+                  media: item.image.map((media: any) => ({
+                    path: media.path,
+                    type: /\.mp4(?:$|\?)/i.test(media.path || '')
+                      ? 'video'
+                      : 'image',
+                  })),
+                })),
+              }),
+            });
+            const prepared = (await response.json()) as {
+              draftId?: string;
+              preview?: string;
+              forum?: { id: number; name: string };
+              postTypeName?: string;
+              title?: string;
+              body?: string;
+              imageCount?: number;
+              warnings?: string[];
+              message?: string | string[];
+            };
+            if (!response.ok || !prepared.draftId || !prepared.preview) {
+              throw new Error(
+                Array.isArray(prepared.message)
+                  ? prepared.message.join(', ')
+                  : prepared.message ||
+                    'ChineseInLA could not prepare the post preview.'
+              );
+            }
+
+            const confirmed = await new Promise<boolean>((resolve) => {
+              let decided = false;
+              const decide = (value: boolean) => {
+                if (!decided) {
+                  decided = true;
+                  resolve(value);
+                }
+              };
+
+              modal.openModal({
+                title: 'Review ChineseInLA prepared post',
+                withCloseButton: true,
+                closeOnClickOutside: false,
+                closeOnEscape: false,
+                onClose: () => decide(false),
+                size: '760px',
+                children: (close) => (
+                  <div className="flex flex-col gap-[16px] text-textColor">
+                    <div className="rounded-[8px] border border-orange-500/35 bg-orange-500/10 p-[12px] text-[13px]">
+                      Nothing has been submitted yet. Review the screenshot of
+                      the filled ChineseInLA form, then confirm separately.
+                    </div>
+                    <div className="grid gap-[8px] rounded-[8px] border border-newTableBorder p-[12px] text-[13px]">
+                      <div>
+                        <span className="text-textColor/60">Forum:</span>{' '}
+                        {prepared.forum?.name || 'Unknown'} (ID{' '}
+                        {prepared.forum?.id || 'unknown'})
+                      </div>
+                      <div>
+                        <span className="text-textColor/60">Post type:</span>{' '}
+                        {prepared.postTypeName || 'Unknown'}
+                      </div>
+                      <div>
+                        <span className="text-textColor/60">Title:</span>{' '}
+                        {prepared.title}
+                      </div>
+                      <div>
+                        <span className="text-textColor/60">Images:</span>{' '}
+                        {prepared.imageCount || 0}
+                      </div>
+                      <div>
+                        <span className="text-textColor/60">Body:</span>
+                        <div className="mt-[4px] max-h-[120px] overflow-auto whitespace-pre-wrap rounded-[6px] bg-newBgColor p-[8px]">
+                          {prepared.body}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="max-h-[420px] overflow-auto rounded-[8px] border border-newTableBorder bg-white p-[8px]">
+                      <img
+                        src={prepared.preview}
+                        alt="Prepared ChineseInLA post form"
+                        className="mx-auto h-auto max-w-full"
+                      />
+                    </div>
+                    {!!prepared.warnings?.length && (
+                      <div className="rounded-[8px] border border-yellow-500/35 bg-yellow-500/10 p-[12px] text-[12px]">
+                        {prepared.warnings.map((warning) => (
+                          <div key={warning}>{warning}</div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="text-[14px] font-semibold">
+                      Publish this currently previewed ChineseInLA post now?
+                    </div>
+                    <div className="flex justify-end gap-[10px]">
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          decide(false);
+                          close();
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          decide(true);
+                          close();
+                        }}
+                      >
+                        Confirm and publish now
+                      </Button>
+                    </div>
+                  </div>
+                ),
+              });
+            });
+
+            if (!confirmed) {
+              setLoading(false);
+              return;
+            }
+            chineseInLAPost.settings.preparedDraftId = prepared.draftId;
+          } catch (error) {
+            toaster.show(
+              error instanceof Error
+                ? error.message
+                : 'ChineseInLA could not prepare this post.',
+              'warning'
+            );
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
       const shortlinkPreference = shortlinkPreferenceData?.shortlink || 'ASK';
 
       let shortLink = false;
 
-      if (!dummy && shortlinkPreference !== 'NO') {
+      if (!dummy && !chineseInLAPosts.length && shortlinkPreference !== 'NO') {
         const shortLinkUrl = await (
           await fetch('/posts/should-shortlink', {
             method: 'POST',

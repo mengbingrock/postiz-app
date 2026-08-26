@@ -4,9 +4,11 @@ import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integ
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
 import {
   AuthTokenDetails,
+  ClientInformation,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { TemporalService } from 'nestjs-temporal-core';
+import { AuthService } from '@gitroom/helpers/auth/auth.service';
 
 @Injectable()
 export class RefreshIntegrationService {
@@ -73,8 +75,12 @@ export class RefreshIntegrationService {
     socialProvider: SocialProvider,
     cause = ''
   ): Promise<AuthTokenDetails | false> {
+    const clientInformation = this.getCustomOAuthCredentials(
+      integration,
+      socialProvider
+    );
     const refresh: false | AuthTokenDetails = await socialProvider
-      .refreshToken(integration.refreshToken)
+      .refreshToken(integration.refreshToken, clientInformation)
       .catch((err) => false);
 
     if (!refresh || !refresh.accessToken) {
@@ -114,5 +120,24 @@ export class RefreshIntegrationService {
       ...refresh,
       ...reConnect,
     };
+  }
+
+  private getCustomOAuthCredentials(
+    integration: Integration,
+    provider: SocialProvider
+  ): ClientInformation | undefined {
+    if (
+      !provider.customOAuthCredentials ||
+      !integration.customInstanceDetails
+    ) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(
+        AuthService.fixedDecryption(integration.customInstanceDetails)
+      );
+    } catch {
+      return undefined;
+    }
   }
 }

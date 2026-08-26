@@ -1,0 +1,18 @@
+[Unit]
+Description=Postiz frontend
+After=network-online.target postiz-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/postiz/app
+Environment=NODE_ENV=production
+Environment=PATH=/opt/node-v22.20.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/pnpm start:prod:frontend
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -25,7 +25,7 @@ import {
   redNoteBinaryPaths,
 } from '@gitroom/nestjs-libraries/integrations/social/rednote.binary.installer';
 
-type RedNoteCredentials = {
+export type RedNoteCredentials = {
   binaryPath: string;
   mcpEndpoint: string;
   profileName: string;
@@ -42,30 +42,48 @@ type McpEnvelope = {
   error?: { code?: number; message?: string; data?: unknown };
 };
 
-type McpContent = {
+export type McpContent = {
   type: string;
   text?: string;
   data?: string;
   mimeType?: string;
 };
 
-type McpToolResult = {
+export type McpToolResult = {
   content: McpContent[];
   text: string;
 };
 
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
 const startingServers = new Map<string, Promise<void>>();
+type RedNoteLoginState =
+  | 'waiting_for_scan'
+  | 'qr_scanned'
+  | 'otp_required'
+  | 'submitting_otp'
+  | 'otp_submitted'
+  | 'captcha_required'
+  | 'authenticated'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
+
 type InteractiveLogin = {
   status: 'idle' | 'running' | 'success' | 'error';
   message: string;
   credentials?: RedNoteCredentials;
+  loginSessionId?: string;
+  loginState?: RedNoteLoginState;
+  otpAttempts?: number;
+  otpMaxAttempts?: number;
   qrCode?: string;
   expiresAt?: number;
   cookiePath?: string;
   backupCookiePath?: string;
   hasCookieBackup?: boolean;
   statusCheck?: Promise<void>;
+  otpSubmission?: Promise<void>;
+  captchaObservations?: number;
   cancelled?: boolean;
 };
 const interactiveLogins = new Map<string, InteractiveLogin>();
@@ -73,14 +91,18 @@ let activeInteractiveLoginKey: string | undefined;
 
 const QR_CODE_LIFETIME_MS = 4 * 60_000;
 const MAX_QR_CODE_BYTES = 2 * 1024 * 1024;
+const CAPTCHA_CONFIRMATION_POLLS = 3;
+const LOGIN_SESSION_ID_PATTERN =
+  /(?:登录会话 ID|login session ID)\s*[:：]\s*([A-Za-z0-9_-]{20,128})/i;
+const OTP_CODE_PATTERN = /^\d{6}$/;
 
 export class RedNoteProvider extends SocialAbstract implements SocialProvider {
   identifier = 'rednote';
   name = 'RedNote';
   isBetweenSteps = false;
   scopes: string[] = [];
-  editor = 'normal' as const;
-  dto = RedNoteDto;
+  editor: 'none' | 'normal' | 'markdown' | 'html' = 'normal';
+  dto: any = RedNoteDto;
   override maxConcurrentJob = 1;
 
   maxLength() {
@@ -120,7 +142,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  private decodeCredentials(value: string): RedNoteCredentials {
+  protected decodeCredentials(value: string): RedNoteCredentials {
     try {
       const parsed = JSON.parse(
         Buffer.from(value, 'base64url').toString('utf8')
@@ -149,7 +171,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
   }
 
-  private setupCredentials(
+  protected setupCredentials(
     value?: Partial<RedNoteCredentials>
   ): RedNoteCredentials {
     const configuredBinary =
@@ -241,6 +263,12 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       if (!image?.data) {
         throw new Error(result.text || 'RedNote MCP did not return a QR code.');
       }
+      const loginSessionId = result.text.match(LOGIN_SESSION_ID_PATTERN)?.[1];
+      if (!loginSessionId) {
+        throw new Error(
+          'The installed RedNote MCP server does not expose an OTP-capable login session. Install the updated MCP binary and try again.'
+        );
+      }
 
       const mimeType = image.mimeType || 'image/png';
       if (!['image/png', 'image/jpeg'].includes(mimeType)) {
@@ -259,6 +287,10 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         message:
           'Scan this QR code with the Xiaohongshu app and approve the login.',
         credentials,
+        loginSessionId,
+        loginState: 'waiting_for_scan',
+        otpAttempts: 0,
+        otpMaxAttempts: 3,
         qrCode: `data:${mimeType};base64,${base64}`,
         expiresAt: Date.now() + QR_CODE_LIFETIME_MS,
         cookiePath,
@@ -292,6 +324,14 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       ...(state.expiresAt
         ? { expiresAt: new Date(state.expiresAt).toISOString() }
         : {}),
+      ...(state.loginState ? { loginState: state.loginState } : {}),
+      ...(state.otpAttempts !== undefined
+        ? { otpAttempts: state.otpAttempts }
+        : {}),
+      ...(state.otpMaxAttempts !== undefined
+        ? { otpMaxAttempts: state.otpMaxAttempts }
+        : {}),
+      otpRequired: state.loginState === 'otp_required',
     };
   }
 
@@ -319,7 +359,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     key: string,
     state: InteractiveLogin
   ) {
-    if (!state.credentials) {
+    if (!state.credentials || !state.loginSessionId) {
       state.status = 'error';
       state.message = 'The RedNote login session is missing its configuration.';
       return;
@@ -328,14 +368,33 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     try {
       const output = await this.callMcpTool(
         state.credentials,
-        'check_login_status',
-        {},
+        'get_login_session_status',
+        { session_id: state.loginSessionId },
         60_000
       );
       if (state.cancelled || interactiveLogins.get(key) !== state) {
         return;
       }
-      if (!/未登录|not logged in/i.test(output)) {
+      const session = this.parseLoginSessionStatus(output);
+      if (session.loginState === 'captcha_required') {
+        state.captchaObservations = (state.captchaObservations || 0) + 1;
+        if (state.captchaObservations < CAPTCHA_CONFIRMATION_POLLS) {
+          // The Xiaohongshu SMS dialog is named r-captcha-modal and its input
+          // mounts asynchronously. Keep polling so a transient DOM snapshot
+          // cannot permanently hide the OTP field in Postiz.
+          state.loginState = 'qr_scanned';
+          state.message =
+            'Verification dialog detected. Waiting briefly for the SMS code field…';
+          return;
+        }
+      } else {
+        state.captchaObservations = 0;
+      }
+      state.loginState = session.loginState;
+      state.otpAttempts = session.otpAttempts;
+      state.otpMaxAttempts = session.otpMaxAttempts;
+
+      if (session.loginState === 'authenticated') {
         if (state.cookiePath) {
           await access(state.cookiePath);
           if (process.platform !== 'win32') {
@@ -356,13 +415,52 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         }
         return;
       }
+
+      const messages: Record<RedNoteLoginState, string> = {
+        waiting_for_scan:
+          'Scan the QR code with the Xiaohongshu app to continue.',
+        qr_scanned: 'QR code scanned. Waiting for Xiaohongshu confirmation…',
+        otp_required:
+          'Xiaohongshu requires a six-digit verification code. Enter it below.',
+        submitting_otp: 'Submitting the verification code securely…',
+        otp_submitted:
+          'Verification code submitted. Waiting for Xiaohongshu to finish login…',
+        captcha_required:
+          'Xiaohongshu requires an interactive CAPTCHA that cannot be completed through the OTP field. Request a new QR code or use the visible login tool.',
+        authenticated: 'RedNote login completed.',
+        failed: session.lastError
+          ? `RedNote login failed: ${session.lastError}`
+          : 'RedNote login failed. Request a new QR code.',
+        expired: 'This QR code expired. Request a new one and scan it again.',
+        cancelled:
+          'This login session was replaced. Request a new QR code and try again.',
+      };
+      state.message = messages[session.loginState];
+
+      if (
+        ['captcha_required', 'failed', 'expired', 'cancelled'].includes(
+          session.loginState
+        )
+      ) {
+        state.status = 'error';
+        state.qrCode = undefined;
+        if (
+          state.hasCookieBackup &&
+          state.backupCookiePath &&
+          state.cookiePath
+        ) {
+          await copyFile(state.backupCookiePath, state.cookiePath).catch(
+            () => undefined
+          );
+        }
+        if (activeInteractiveLoginKey === key) {
+          activeInteractiveLoginKey = undefined;
+        }
+      }
     } catch (error) {
       if (state.cancelled || interactiveLogins.get(key) !== state) {
         return;
       }
-      // A fresh status check starts another headless browser and may fail
-      // transiently while the QR browser is completing navigation. Keep the
-      // pending QR usable until its advertised expiry.
       state.message =
         error instanceof Error
           ? `Waiting for approval (${error.message})`
@@ -383,6 +481,87 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         activeInteractiveLoginKey = undefined;
       }
     }
+  }
+
+  private parseLoginSessionStatus(output: string) {
+    const states: Array<[RegExp, RedNoteLoginState]> = [
+      [/需要输入验证码|OTP required/i, 'otp_required'],
+      [/正在提交验证码|submitting OTP/i, 'submitting_otp'],
+      [/验证码已提交|OTP submitted/i, 'otp_submitted'],
+      [/需要人工完成 CAPTCHA|CAPTCHA required/i, 'captcha_required'],
+      [/登录成功|authenticated/i, 'authenticated'],
+      [/二维码已扫描|QR code scanned/i, 'qr_scanned'],
+      [/登录会话已过期|session expired/i, 'expired'],
+      [/登录会话已被新的二维码取代|session cancelled/i, 'cancelled'],
+      [/登录失败|login failed/i, 'failed'],
+      [/等待扫码|waiting for scan/i, 'waiting_for_scan'],
+    ];
+    const loginState = states.find(([pattern]) => pattern.test(output))?.[1];
+    if (!loginState) {
+      throw new Error('RedNote MCP returned an unknown login session state.');
+    }
+
+    const attempts = output.match(
+      /验证码提交次数\s*[:：]\s*(\d+)\s*\/\s*(\d+)/i
+    );
+    const lastError = output.match(/页面提示\s*[:：]\s*([^\n]+)/i)?.[1]?.trim();
+    return {
+      loginState,
+      otpAttempts: attempts ? Number(attempts[1]) : 0,
+      otpMaxAttempts: attempts ? Number(attempts[2]) : 3,
+      lastError,
+    };
+  }
+
+  async submitInteractiveLoginCode(key: string, code: string) {
+    if (!OTP_CODE_PATTERN.test(code)) {
+      throw new Error('Verification code must contain exactly six digits.');
+    }
+    const state = interactiveLogins.get(key);
+    if (
+      !state ||
+      state.status !== 'running' ||
+      !state.credentials ||
+      !state.loginSessionId
+    ) {
+      throw new Error('The RedNote login session is no longer active.');
+    }
+    if (state.loginState !== 'otp_required') {
+      throw new Error(
+        'Xiaohongshu is not currently requesting a verification code.'
+      );
+    }
+    if (state.otpSubmission) {
+      throw new Error('A verification code is already being submitted.');
+    }
+
+    state.loginState = 'submitting_otp';
+    state.message = 'Submitting the verification code securely…';
+    state.otpSubmission = this.callMcpTool(
+      state.credentials,
+      'submit_login_code',
+      { session_id: state.loginSessionId, code },
+      60_000
+    )
+      .then(() => {
+        state.loginState = 'otp_submitted';
+        state.message =
+          'Verification code submitted. Waiting for Xiaohongshu to finish login…';
+      })
+      .catch((error) => {
+        state.loginState = 'otp_required';
+        state.message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to submit the verification code.';
+        throw error;
+      })
+      .finally(() => {
+        state.otpSubmission = undefined;
+      });
+
+    await state.otpSubmission;
+    return this.loginStatusResponse(state);
   }
 
   async startMcpForSetup(value?: Partial<RedNoteCredentials>) {
@@ -617,7 +796,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return starting;
   }
 
-  private async callMcpToolResult(
+  protected async callMcpToolResult(
     credentials: RedNoteCredentials,
     name: string,
     args: Record<string, unknown>,
@@ -662,7 +841,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
   }
 
-  private async callMcpTool(
+  protected async callMcpTool(
     credentials: RedNoteCredentials,
     name: string,
     args: Record<string, unknown>,
@@ -730,7 +909,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
   }
 
-  private async existingLocalPath(relativePath: string) {
+  protected async existingLocalPath(relativePath: string) {
     const normalized = relativePath.replace(/^\/+/, '');
     const candidates = [
       join(process.cwd(), normalized),
@@ -748,7 +927,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return undefined;
   }
 
-  private async localOrPublicMediaPath(value: string) {
+  protected async localOrPublicMediaPath(value: string) {
     if (isAbsolute(value)) {
       return value;
     }

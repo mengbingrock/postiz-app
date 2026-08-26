@@ -16,6 +16,7 @@ import { TiktokBusinessProvider } from '@gitroom/nestjs-libraries/integrations/s
 import { PinterestProvider } from '@gitroom/nestjs-libraries/integrations/social/pinterest.provider';
 import { DribbbleProvider } from '@gitroom/nestjs-libraries/integrations/social/dribbble.provider';
 import { LinkedinPageProvider } from '@gitroom/nestjs-libraries/integrations/social/linkedin.page.provider';
+import { LinkedinPageByoProvider } from '@gitroom/nestjs-libraries/integrations/social/linkedin.page.byo.provider';
 import { ThreadsProvider } from '@gitroom/nestjs-libraries/integrations/social/threads.provider';
 import { DiscordProvider } from '@gitroom/nestjs-libraries/integrations/social/discord.provider';
 import { SlackProvider } from '@gitroom/nestjs-libraries/integrations/social/slack.provider';
@@ -40,11 +41,13 @@ import { MeweProvider } from '@gitroom/nestjs-libraries/integrations/social/mewe
 import { TumblrProvider } from '@gitroom/nestjs-libraries/integrations/social/tumblr.provider';
 import { TajimaWebsiteProvider } from '@gitroom/nestjs-libraries/integrations/social/tajima.website.provider';
 import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
+import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
 
 export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
   new XProvider(),
   new LinkedinProvider(),
   new LinkedinPageProvider(),
+  new LinkedinPageByoProvider(),
   new RedditProvider(),
   new InstagramProvider(),
   new InstagramStandaloneProvider(),
@@ -79,6 +82,7 @@ export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
   new TumblrProvider(),
   new TajimaWebsiteProvider(),
   new RedNoteProvider(),
+  new ChineseInLAProvider(),
   // new MastodonCustomProvider(),
 ];
 
@@ -142,6 +146,7 @@ export class IntegrationManager {
             isExternal: !!p.externalUrl,
             isWeb3: !!p.isWeb3,
             isChromeExtension: !!p.isChromeExtension,
+            customOAuthCredentials: !!p.customOAuthCredentials,
             ...(p.extensionCookies
               ? { extensionCookies: p.extensionCookies }
               : {}),

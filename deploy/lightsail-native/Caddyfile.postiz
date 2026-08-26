@@ -1,0 +1,19 @@
+post.truegrit.dev {
+	encode zstd gzip
+
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:3003
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:4200
+	}
+}
+
+http://post.truegrit.dev {
+	redir https://post.truegrit.dev{uri} permanent
+}
+
+postiz.44.240.150.216.nip.io {
+	redir https://post.truegrit.dev{uri} permanent
+}

@@ -9,6 +9,7 @@ import { IntegrationRepository } from '@gitroom/nestjs-libraries/database/prisma
 import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import {
   AnalyticsData,
+  ClientInformation,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { Integration, Organization } from '@prisma/client';
@@ -28,6 +29,7 @@ import utc from 'dayjs/plugin/utc';
 import { AutopostRepository } from '@gitroom/nestjs-libraries/database/prisma/autopost/autopost.repository';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { TemporalService } from 'nestjs-temporal-core';
+import { AuthService } from '@gitroom/helpers/auth/auth.service';
 
 dayjs.extend(utc);
 
@@ -171,10 +173,21 @@ export class IntegrationService {
     return this._integrationRepository.getIntegrationById(org, id);
   }
 
-  async refreshToken(provider: SocialProvider, refresh: string) {
+  getIntegrationByInternalId(org: string, internalId: string) {
+    return this._integrationRepository.getIntegrationByInternalId(
+      org,
+      internalId
+    );
+  }
+
+  async refreshToken(
+    provider: SocialProvider,
+    refresh: string,
+    clientInformation?: ClientInformation
+  ) {
     try {
       const { refreshToken, accessToken, expiresIn } =
-        await provider.refreshToken(refresh);
+        await provider.refreshToken(refresh, clientInformation);
 
       if (!refreshToken || !accessToken || !expiresIn) {
         return false;
@@ -328,7 +341,15 @@ export class IntegrationService {
         integration.providerIdentifier
       );
 
-      const data = await this.refreshToken(provider, integration.refreshToken!);
+      const clientInformation = this.getCustomOAuthCredentials(
+        integration,
+        provider
+      );
+      const data = await this.refreshToken(
+        provider,
+        integration.refreshToken!,
+        clientInformation
+      );
 
       if (!data) {
         await this.informAboutRefreshError(
@@ -357,6 +378,25 @@ export class IntegrationService {
         refreshToken,
         expiresIn
       );
+    }
+  }
+
+  private getCustomOAuthCredentials(
+    integration: Integration,
+    provider: SocialProvider
+  ): ClientInformation | undefined {
+    if (
+      !provider.customOAuthCredentials ||
+      !integration.customInstanceDetails
+    ) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(
+        AuthService.fixedDecryption(integration.customInstanceDetails)
+      );
+    } catch {
+      return undefined;
     }
   }
 
