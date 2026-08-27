@@ -61,7 +61,7 @@ A single LinkedIn post with one comment
 
 Do not use this to update or delete existing posts.
 If validation fails, the result contains output.errors describing what to fix; the call can be retried with corrected parameters.
-For an immediate ChineseInLA post, first call chineseInLAPreparePostTool. Review its PNG preview and obtain a separate explicit user confirmation. Then call this tool once with the identical payload and include preparedDraftId in settings. Never create a ChineseInLA "now" post without that preparation step.
+For an immediate ChineseInLA post, call integrationSchema for platform "chineseinla", then call the advertised preparePostForReview provider helper through triggerTool. Review its PNG preview and obtain a separate explicit user confirmation. Then call this tool once with the identical payload and include preparedDraftId in settings. Never create a ChineseInLA "now" post without that preparation step.
 `,
       inputSchema: z.object({
         socialPost: z
@@ -176,7 +176,7 @@ For an immediate ChineseInLA post, first call chineseInLAPreparePostTool. Review
               return {
                 output: {
                   errors:
-                    'ChineseInLA requires a preparedDraftId. Call chineseInLAPreparePostTool, review its PNG preview, obtain a separate explicit confirmation, then retry integrationSchedulePostTool with the same payload and returned draftId.',
+                    'ChineseInLA requires a preparedDraftId. Call integrationSchema for platform "chineseinla", invoke its preparePostForReview helper through triggerTool, review the PNG preview, obtain a separate explicit confirmation, then retry integrationSchedulePostTool with the same payload and returned draftId.',
                 },
               };
             }

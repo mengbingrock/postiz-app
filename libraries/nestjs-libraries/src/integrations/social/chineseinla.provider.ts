@@ -13,6 +13,11 @@ import {
 } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { ChineseInLADto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/chineseinla.dto';
 import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validation';
+import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
+import {
+  ValidUrlExtension,
+  ValidUrlPath,
+} from '@gitroom/helpers/utils/valid.url.path';
 
 type ChineseInLALoginSession = {
   session_id: string;
@@ -122,6 +127,8 @@ type ChineseInLAPublishResponse = {
 
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
 const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
+const validAttachmentPath = new ValidUrlPath();
+const validAttachmentExtension = new ValidUrlExtension();
 
 export const chineseInLAPostizContentToText = (content: string) =>
   stripHtmlValidation(
@@ -148,6 +155,58 @@ export class ChineseInLAProvider
 
   override maxLength() {
     return 10_000;
+  }
+
+  private positiveInteger(
+    value: string | undefined,
+    field: string,
+    defaultValue?: number,
+    maximum?: number
+  ) {
+    const normalized = value?.trim();
+    if (!normalized && defaultValue !== undefined) {
+      return defaultValue;
+    }
+    const parsed = Number(normalized);
+    if (
+      !Number.isInteger(parsed) ||
+      parsed <= 0 ||
+      (maximum !== undefined && parsed > maximum)
+    ) {
+      throw new Error(
+        `${field} must be a positive integer${
+          maximum === undefined ? '' : ` no greater than ${maximum}`
+        }.`
+      );
+    }
+    return parsed;
+  }
+
+  private attachmentList(value?: string) {
+    if (!value?.trim()) {
+      return [];
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error('attachments must be a JSON array of Postiz media URLs.');
+    }
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((item) => typeof item === 'string')
+    ) {
+      throw new Error('attachments must be a JSON array of Postiz media URLs.');
+    }
+    for (const attachment of parsed) {
+      if (
+        !validAttachmentPath.validate(attachment, {} as any) ||
+        !validAttachmentExtension.validate(attachment, {} as any)
+      ) {
+        throw new Error(`Invalid ChineseInLA attachment URL: ${attachment}`);
+      }
+    }
+    return parsed;
   }
 
   private parseJson<T>(text: string, operation: string): T {
@@ -330,6 +389,11 @@ export class ChineseInLAProvider
     };
   }
 
+  @Tool({
+    description:
+      'List the live ChineseInLA forum catalog. Returns the valid category/group and forum IDs needed by the other ChineseInLA provider helpers and publishing settings. Read-only.',
+    dataSchema: [],
+  })
   async listForums(accessToken: string) {
     const credentials = this.decodeCredentials(accessToken);
     const output = await this.callMcpTool(
@@ -346,6 +410,45 @@ export class ChineseInLAProvider
       throw new Error('ChineseInLA did not return its forum catalog.');
     }
     return response.forums.map((forum) => this.normalizeForum(forum));
+  }
+
+  @Tool({
+    description:
+      'List topics from one ChineseInLA forum. Use the exact categoryId and forumId returned by listForums. Returns topic IDs for readForumPost. Read-only.',
+    dataSchema: [
+      {
+        key: 'categoryId',
+        type: 'number',
+        description: 'Category/group ID returned by listForums',
+      },
+      {
+        key: 'forumId',
+        type: 'number',
+        description: 'Forum ID returned by listForums',
+      },
+      {
+        key: 'page',
+        type: 'number',
+        description: 'Optional one-based page number; defaults to 1',
+      },
+      {
+        key: 'limit',
+        type: 'number',
+        description: 'Optional result limit from 1 through 15; defaults to 15',
+      },
+    ],
+  })
+  async listForumPosts(
+    accessToken: string,
+    data: Record<string, string | undefined>
+  ) {
+    return this.listPosts(
+      accessToken,
+      this.positiveInteger(data.categoryId, 'categoryId'),
+      this.positiveInteger(data.forumId, 'forumId'),
+      this.positiveInteger(data.page, 'page', 1, 100),
+      this.positiveInteger(data.limit, 'limit', 15, 15)
+    );
   }
 
   async listPosts(
@@ -394,6 +497,51 @@ export class ChineseInLAProvider
         highlighted: post.highlighted,
       })),
     };
+  }
+
+  @Tool({
+    description:
+      'Read one ChineseInLA topic and its messages. Use the exact categoryId, forumId, and topicId returned by listForums and listForumPosts. Read-only.',
+    dataSchema: [
+      {
+        key: 'categoryId',
+        type: 'number',
+        description: 'Category/group ID returned by listForums',
+      },
+      {
+        key: 'forumId',
+        type: 'number',
+        description: 'Forum ID returned by listForums',
+      },
+      {
+        key: 'topicId',
+        type: 'number',
+        description: 'Topic ID returned by listForumPosts',
+      },
+      {
+        key: 'page',
+        type: 'number',
+        description: 'Optional one-based page number; defaults to 1',
+      },
+      {
+        key: 'limit',
+        type: 'number',
+        description: 'Optional message limit from 1 through 10; defaults to 10',
+      },
+    ],
+  })
+  async readForumPost(
+    accessToken: string,
+    data: Record<string, string | undefined>
+  ) {
+    return this.readPost(
+      accessToken,
+      this.positiveInteger(data.categoryId, 'categoryId'),
+      this.positiveInteger(data.forumId, 'forumId'),
+      this.positiveInteger(data.topicId, 'topicId'),
+      this.positiveInteger(data.page, 'page', 1, 100),
+      this.positiveInteger(data.limit, 'limit', 10, 10)
+    );
   }
 
   async readPost(
@@ -464,6 +612,118 @@ export class ChineseInLAProvider
         .map((tag) => tag.trim())
         .filter(Boolean) || []
     );
+  }
+
+  @Tool({
+    description:
+      'Prepare a ChineseInLA post for preview without publishing it. Call only after the user explicitly approves filling the exact payload. Review the returned PNG preview and obtain a separate confirmation before publishing through integrationSchedulePostTool with the returned preparedDraftId.',
+    dataSchema: [
+      {
+        key: 'forumId',
+        type: 'number',
+        description: 'Forum ID returned by listForums',
+      },
+      {
+        key: 'postType',
+        type: 'string',
+        description: 'One of: question, classified, other',
+      },
+      {
+        key: 'title',
+        type: 'string',
+        description: 'Post title, 1 through 120 characters',
+      },
+      {
+        key: 'content',
+        type: 'string',
+        description:
+          'Post body, up to 10,000 characters; Postiz HTML is accepted',
+      },
+      {
+        key: 'tags',
+        type: 'string',
+        description: 'Optional comma-separated tags, up to 240 characters',
+      },
+      {
+        key: 'sourceUrl',
+        type: 'string',
+        description: 'Optional HTTP or HTTPS source URL',
+      },
+      {
+        key: 'attachments',
+        type: 'json',
+        description: 'Optional JSON array of Postiz-hosted media URLs',
+      },
+      {
+        key: 'confirmPreparation',
+        type: 'boolean',
+        description:
+          'Must be the string true only after the user approves filling this exact payload for preview; this does not authorize publication',
+      },
+    ],
+  })
+  async preparePostForReview(
+    accessToken: string,
+    data: Record<string, string | undefined>
+  ) {
+    if (data.confirmPreparation?.trim().toLowerCase() !== 'true') {
+      throw new Error(
+        'confirmPreparation must be true after the user approves filling this exact ChineseInLA payload for preview.'
+      );
+    }
+    const postType = data.postType?.trim();
+    if (!postType || !['question', 'classified', 'other'].includes(postType)) {
+      throw new Error('postType must be question, classified, or other.');
+    }
+    const title = data.title?.trim() || '';
+    if (!title || title.length > 120) {
+      throw new Error('title must contain 1 through 120 characters.');
+    }
+    const content = data.content || '';
+    if (!content.trim() || content.length > 10_000) {
+      throw new Error('content must contain 1 through 10,000 characters.');
+    }
+    const tags = data.tags?.trim();
+    if (tags && tags.length > 240) {
+      throw new Error('tags must not exceed 240 characters.');
+    }
+    const sourceUrl = data.sourceUrl?.trim();
+    if (sourceUrl) {
+      let parsed: URL;
+      try {
+        parsed = new URL(sourceUrl);
+      } catch {
+        throw new Error('sourceUrl must be a valid HTTP or HTTPS URL.');
+      }
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('sourceUrl must be a valid HTTP or HTTPS URL.');
+      }
+    }
+    const attachments = this.attachmentList(data.attachments);
+    const prepared = await this.preparePost(
+      accessToken,
+      {
+        forumId: this.positiveInteger(data.forumId, 'forumId'),
+        postType: postType as ChineseInLADto['postType'],
+        title,
+        ...(tags ? { tags } : {}),
+        ...(sourceUrl ? { sourceUrl } : {}),
+      } as ChineseInLADto,
+      [
+        {
+          content,
+          media: attachments.map((path) => ({
+            path,
+            type: /\.mp4(?:$|\?)/i.test(path) ? 'video' : 'image',
+          })),
+        },
+      ]
+    );
+    return {
+      ...prepared,
+      nextStep:
+        'Review the PNG preview and normalized body. After a separate explicit user confirmation, call integrationSchedulePostTool once with type "now", the identical payload, and preparedDraftId set to this draftId.',
+    };
   }
 
   async preparePost(
@@ -561,7 +821,7 @@ export class ChineseInLAProvider
     const draftId = postDetails[0]?.settings?.preparedDraftId?.trim();
     if (!draftId) {
       throw new Error(
-        'ChineseInLA must be published immediately after reviewing its prepared-form preview. Prepare it in the Postiz composer or with chineseInLAPreparePostTool, then confirm the exact draft.'
+        'ChineseInLA must be published immediately after reviewing its prepared-form preview. Use integrationSchema to find preparePostForReview, call it through triggerTool, then confirm the exact draft.'
       );
     }
 
