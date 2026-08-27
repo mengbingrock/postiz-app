@@ -12,6 +12,8 @@ import { PostsListTool } from '@gitroom/nestjs-libraries/chat/tools/posts.list.t
 import { PostSettingsTool } from '@gitroom/nestjs-libraries/chat/tools/post.settings.tool';
 import { ChineseInLAPreparePostTool } from '@gitroom/nestjs-libraries/chat/tools/chineseinla.prepare.post.tool';
 import { ChineseInLAListForumsTool } from '@gitroom/nestjs-libraries/chat/tools/chineseinla.list.forums.tool';
+import { ChineseInLAListPostsTool } from '@gitroom/nestjs-libraries/chat/tools/chineseinla.list.posts.tool';
+import { ChineseInLAReadPostTool } from '@gitroom/nestjs-libraries/chat/tools/chineseinla.read.post.tool';
 
 export const toolList = [
   IntegrationListTool,
@@ -19,6 +21,8 @@ export const toolList = [
   IntegrationValidationTool,
   IntegrationTriggerTool,
   ChineseInLAListForumsTool,
+  ChineseInLAListPostsTool,
+  ChineseInLAReadPostTool,
   ChineseInLAPreparePostTool,
   IntegrationSchedulePostTool,
   PostsListTool,

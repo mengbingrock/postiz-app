@@ -55,6 +55,53 @@ type ChineseInLAForumResponse = {
   forums: ChineseInLAForumWire[];
 };
 
+type ChineseInLAForumPostWire = {
+  topic_id: number;
+  url: string;
+  title: string;
+  author?: string;
+  author_id?: number;
+  updated_at?: string;
+  reply_count: number;
+  view_count: number;
+  has_images: boolean;
+  highlighted: boolean;
+};
+
+type ChineseInLAListPostsResponse = {
+  status: string;
+  category_id: number;
+  forum: ChineseInLAForumWire;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+  posts: ChineseInLAForumPostWire[];
+};
+
+type ChineseInLATopicMessageWire = {
+  post_id?: number;
+  floor: number;
+  author?: string;
+  author_id?: number;
+  published_at?: string;
+  updated_at?: string;
+  body: string;
+  image_urls?: string[];
+};
+
+type ChineseInLAReadPostResponse = {
+  status: string;
+  category_id: number;
+  forum: ChineseInLAForumWire;
+  topic_id: number;
+  url: string;
+  title: string;
+  page: number;
+  page_size: number;
+  has_next: boolean;
+  messages: ChineseInLATopicMessageWire[];
+};
+
 type ChineseInLAPrepareResponse = {
   status: string;
   draft_id: string;
@@ -299,6 +346,107 @@ export class ChineseInLAProvider
       throw new Error('ChineseInLA did not return its forum catalog.');
     }
     return response.forums.map((forum) => this.normalizeForum(forum));
+  }
+
+  async listPosts(
+    accessToken: string,
+    categoryId: number,
+    forumId: number,
+    page = 1,
+    limit = 15
+  ) {
+    const credentials = this.decodeCredentials(accessToken);
+    const output = await this.callMcpTool(
+      credentials,
+      'chineseinla_list_posts',
+      {
+        category_id: categoryId,
+        forum_id: forumId,
+        page,
+        limit,
+      },
+      90_000
+    );
+    const response = this.parseJson<ChineseInLAListPostsResponse>(
+      output,
+      'forum post list'
+    );
+    if (response.status !== 'ok' || !Array.isArray(response.posts)) {
+      throw new Error('ChineseInLA did not return a forum post list.');
+    }
+    return {
+      status: response.status,
+      categoryId: response.category_id,
+      forum: this.normalizeForum(response.forum),
+      page: response.page,
+      pageSize: response.page_size,
+      hasNext: response.has_next,
+      posts: response.posts.map((post) => ({
+        topicId: post.topic_id,
+        url: post.url,
+        title: post.title,
+        ...(post.author ? { author: post.author } : {}),
+        ...(post.author_id ? { authorId: post.author_id } : {}),
+        ...(post.updated_at ? { updatedAt: post.updated_at } : {}),
+        replyCount: post.reply_count,
+        viewCount: post.view_count,
+        hasImages: post.has_images,
+        highlighted: post.highlighted,
+      })),
+    };
+  }
+
+  async readPost(
+    accessToken: string,
+    categoryId: number,
+    forumId: number,
+    topicId: number,
+    page = 1,
+    limit = 10
+  ) {
+    const credentials = this.decodeCredentials(accessToken);
+    const output = await this.callMcpTool(
+      credentials,
+      'chineseinla_read_post',
+      {
+        category_id: categoryId,
+        forum_id: forumId,
+        topic_id: topicId,
+        page,
+        limit,
+      },
+      90_000
+    );
+    const response = this.parseJson<ChineseInLAReadPostResponse>(
+      output,
+      'topic reader'
+    );
+    if (response.status !== 'ok' || !Array.isArray(response.messages)) {
+      throw new Error('ChineseInLA did not return the requested topic.');
+    }
+    return {
+      status: response.status,
+      categoryId: response.category_id,
+      forum: this.normalizeForum(response.forum),
+      topicId: response.topic_id,
+      url: response.url,
+      title: response.title,
+      page: response.page,
+      pageSize: response.page_size,
+      hasNext: response.has_next,
+      messages: response.messages.map((message) => ({
+        ...(message.post_id ? { postId: message.post_id } : {}),
+        floor: message.floor,
+        ...(message.author ? { author: message.author } : {}),
+        ...(message.author_id ? { authorId: message.author_id } : {}),
+        ...(message.published_at ? { publishedAt: message.published_at } : {}),
+        ...(message.updated_at ? { updatedAt: message.updated_at } : {}),
+        body: message.body,
+        ...(message.image_urls?.length
+          ? { imageUrls: message.image_urls }
+          : {}),
+      })),
+    };
   }
 
   private normalizeForum(forum: ChineseInLAForumWire): ChineseInLAForum {
