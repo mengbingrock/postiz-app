@@ -10,12 +10,16 @@ import { GroupListTool } from '@gitroom/nestjs-libraries/chat/tools/group.list.t
 import { UploadFromUrlTool } from '@gitroom/nestjs-libraries/chat/tools/upload.from.url.tool';
 import { PostsListTool } from '@gitroom/nestjs-libraries/chat/tools/posts.list.tool';
 import { PostSettingsTool } from '@gitroom/nestjs-libraries/chat/tools/post.settings.tool';
+import { ChineseInLAPreparePostTool } from '@gitroom/nestjs-libraries/chat/tools/chineseinla.prepare.post.tool';
+import { ChineseInLAListForumsTool } from '@gitroom/nestjs-libraries/chat/tools/chineseinla.list.forums.tool';
 
 export const toolList = [
   IntegrationListTool,
   GroupListTool,
   IntegrationValidationTool,
   IntegrationTriggerTool,
+  ChineseInLAListForumsTool,
+  ChineseInLAPreparePostTool,
   IntegrationSchedulePostTool,
   PostsListTool,
   PostSettingsTool,

@@ -12,6 +12,7 @@ import {
   RedNoteProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { ChineseInLADto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/chineseinla.dto';
+import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validation';
 
 type ChineseInLALoginSession = {
   session_id: string;
@@ -38,21 +39,26 @@ type ChineseInLALoginStatus = {
 type ChineseInLAForum = {
   id: number;
   name: string;
+  groupId?: number;
   group?: string;
   description?: string;
   restricted: boolean;
 };
 
+type ChineseInLAForumWire = Omit<ChineseInLAForum, 'groupId'> & {
+  group_id?: number;
+};
+
 type ChineseInLAForumResponse = {
   status: string;
   count: number;
-  forums: ChineseInLAForum[];
+  forums: ChineseInLAForumWire[];
 };
 
 type ChineseInLAPrepareResponse = {
   status: string;
   draft_id: string;
-  forum: ChineseInLAForum;
+  forum: ChineseInLAForumWire;
   post_type: string;
   post_type_name: string;
   title: string;
@@ -69,6 +75,20 @@ type ChineseInLAPublishResponse = {
 
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
 const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
+
+export const chineseInLAPostizContentToText = (content: string) =>
+  stripHtmlValidation(
+    'normal',
+    content
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(?:div|h[1-6]|li|ul|ol)>/gi, '$&\n'),
+    false,
+    true
+  )
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
 export class ChineseInLAProvider
   extends RedNoteProvider
@@ -278,7 +298,15 @@ export class ChineseInLAProvider
     if (response.status !== 'ok' || !Array.isArray(response.forums)) {
       throw new Error('ChineseInLA did not return its forum catalog.');
     }
-    return response.forums;
+    return response.forums.map((forum) => this.normalizeForum(forum));
+  }
+
+  private normalizeForum(forum: ChineseInLAForumWire): ChineseInLAForum {
+    const { group_id: groupId, ...normalized } = forum;
+    return {
+      ...normalized,
+      ...(groupId ? { groupId } : {}),
+    };
   }
 
   private tags(value?: string) {
@@ -298,7 +326,7 @@ export class ChineseInLAProvider
       media?: Array<{ path?: string; type?: string }>;
     }>
   ) {
-    const body = value[0]?.content?.trim() || '';
+    const body = chineseInLAPostizContentToText(value[0]?.content || '');
     if (!body) {
       throw new Error('ChineseInLA requires post content.');
     }
@@ -365,7 +393,7 @@ export class ChineseInLAProvider
     return {
       draftId: prepared.draft_id,
       preview,
-      forum: prepared.forum,
+      forum: this.normalizeForum(prepared.forum),
       postType: prepared.post_type,
       postTypeName: prepared.post_type_name,
       title: prepared.title,
@@ -385,7 +413,7 @@ export class ChineseInLAProvider
     const draftId = postDetails[0]?.settings?.preparedDraftId?.trim();
     if (!draftId) {
       throw new Error(
-        'ChineseInLA must be published immediately after reviewing its prepared-form preview. Prepare and confirm the post from the Postiz composer.'
+        'ChineseInLA must be published immediately after reviewing its prepared-form preview. Prepare it in the Postiz composer or with chineseInLAPreparePostTool, then confirm the exact draft.'
       );
     }
 

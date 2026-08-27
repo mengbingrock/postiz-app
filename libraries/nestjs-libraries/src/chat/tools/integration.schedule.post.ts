@@ -61,6 +61,7 @@ A single LinkedIn post with one comment
 
 Do not use this to update or delete existing posts.
 If validation fails, the result contains output.errors describing what to fix; the call can be retried with corrected parameters.
+For an immediate ChineseInLA post, first call chineseInLAPreparePostTool. Review its PNG preview and obtain a separate explicit user confirmation. Then call this tool once with the identical payload and include preparedDraftId in settings. Never create a ChineseInLA "now" post without that preparation step.
 `,
       inputSchema: z.object({
         socialPost: z
@@ -156,6 +157,31 @@ If validation fails, the result contains output.errors describing what to fix; t
             {} as AllProvidersSettings
           );
 
+          if (
+            integrations[platform.integrationId]?.providerIdentifier ===
+            'chineseinla'
+          ) {
+            if (platform.type === 'schedule') {
+              return {
+                output: {
+                  errors:
+                    'ChineseInLA supports only draft or immediate publishing. Use type "now" after terminal preview confirmation.',
+                },
+              };
+            }
+            if (
+              platform.type === 'now' &&
+              !String((settings as any).preparedDraftId || '').trim()
+            ) {
+              return {
+                output: {
+                  errors:
+                    'ChineseInLA requires a preparedDraftId. Call chineseInLAPreparePostTool, review its PNG preview, obtain a separate explicit confirmation, then retry integrationSchedulePostTool with the same payload and returned draftId.',
+                },
+              };
+            }
+          }
+
           const [validation] = await this._postsService.validatePosts(
             organizationId,
             [
@@ -207,6 +233,21 @@ If validation fails, the result contains output.errors describing what to fix; t
               };
             }
           }
+        }
+
+        const immediateChineseInLAPosts = inputData.socialPost.filter(
+          (post) =>
+            post.type === 'now' &&
+            integrations[post.integrationId]?.providerIdentifier ===
+              'chineseinla'
+        );
+        if (immediateChineseInLAPosts.length > 1) {
+          return {
+            output: {
+              errors:
+                'Publish only one prepared ChineseInLA post per terminal call. Each preparation owns one browser form and draftId.',
+            },
+          };
         }
 
         for (const post of inputData.socialPost) {
