@@ -269,13 +269,19 @@ export const RedNoteConnectionSetup: FC<{
           <div className="flex flex-col items-center gap-[8px] rounded-[8px] bg-white p-[14px]">
             <img
               src={qrCode}
-              alt="Xiaohongshu login QR code"
+              alt={
+                loginState === 'captcha_required'
+                  ? 'Xiaohongshu account-security verification QR code'
+                  : 'Xiaohongshu login QR code'
+              }
               width={260}
               height={260}
               className="h-[260px] w-[260px] object-contain"
             />
             <div className="text-center text-[12px] text-black/60">
-              {expiresAt
+              {loginState === 'captcha_required'
+                ? 'Second verification step: scan this refreshed QR with the Xiaohongshu account already signed in on your phone.'
+                : expiresAt
                 ? `Valid until ${new Date(expiresAt).toLocaleTimeString()}`
                 : 'This QR code is valid for about four minutes.'}
             </div>
@@ -338,10 +344,10 @@ export const RedNoteConnectionSetup: FC<{
           type="button"
           onClick={startLogin}
           loading={starting}
-          disabled={starting || connecting}
+          disabled={starting || connecting || status === 'running'}
         >
           {status === 'running'
-            ? 'Request a New QR Code'
+            ? 'Login Session Active'
             : status === 'success'
             ? 'Log in with Another Account'
             : 'Get Xiaohongshu QR Code'}

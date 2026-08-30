@@ -83,7 +83,6 @@ type InteractiveLogin = {
   hasCookieBackup?: boolean;
   statusCheck?: Promise<void>;
   otpSubmission?: Promise<void>;
-  captchaObservations?: number;
   cancelled?: boolean;
 };
 const interactiveLogins = new Map<string, InteractiveLogin>();
@@ -91,7 +90,6 @@ let activeInteractiveLoginKey: string | undefined;
 
 const QR_CODE_LIFETIME_MS = 4 * 60_000;
 const MAX_QR_CODE_BYTES = 2 * 1024 * 1024;
-const CAPTCHA_CONFIRMATION_POLLS = 3;
 const LOGIN_SESSION_ID_PATTERN =
   /(?:登录会话 ID|login session ID)\s*[:：]\s*([A-Za-z0-9_-]{20,128})/i;
 const OTP_CODE_PATTERN = /^\d{6}$/;
@@ -260,7 +258,8 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       const image = result.content.find(
         (item) => item.type === 'image' && item.data
       );
-      if (!image?.data) {
+      const qrCode = this.mcpImageDataUrl(image);
+      if (!qrCode) {
         throw new Error(result.text || 'RedNote MCP did not return a QR code.');
       }
       const loginSessionId = result.text.match(LOGIN_SESSION_ID_PATTERN)?.[1];
@@ -268,18 +267,6 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         throw new Error(
           'The installed RedNote MCP server does not expose an OTP-capable login session. Install the updated MCP binary and try again.'
         );
-      }
-
-      const mimeType = image.mimeType || 'image/png';
-      if (!['image/png', 'image/jpeg'].includes(mimeType)) {
-        throw new Error(`RedNote MCP returned unsupported ${mimeType} data.`);
-      }
-      const base64 = image.data.replace(/\s/g, '');
-      if (
-        !/^[A-Za-z0-9+/]+={0,2}$/.test(base64) ||
-        Buffer.from(base64, 'base64').byteLength > MAX_QR_CODE_BYTES
-      ) {
-        throw new Error('RedNote MCP returned an invalid QR code image.');
       }
 
       const state: InteractiveLogin = {
@@ -291,7 +278,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         loginState: 'waiting_for_scan',
         otpAttempts: 0,
         otpMaxAttempts: 3,
-        qrCode: `data:${mimeType};base64,${base64}`,
+        qrCode,
         expiresAt: Date.now() + QR_CODE_LIFETIME_MS,
         cookiePath,
         backupCookiePath,
@@ -335,6 +322,24 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
+  private mcpImageDataUrl(image?: McpContent) {
+    if (!image?.data) {
+      return undefined;
+    }
+    const mimeType = image.mimeType || 'image/png';
+    if (!['image/png', 'image/jpeg'].includes(mimeType)) {
+      throw new Error(`RedNote MCP returned unsupported ${mimeType} data.`);
+    }
+    const base64 = image.data.replace(/\s/g, '');
+    if (
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(base64) ||
+      Buffer.from(base64, 'base64').byteLength > MAX_QR_CODE_BYTES
+    ) {
+      throw new Error('RedNote MCP returned an invalid QR code image.');
+    }
+    return `data:${mimeType};base64,${base64}`;
+  }
+
   async getInteractiveLoginStatus(key: string) {
     const state = interactiveLogins.get(key) || {
       status: 'idle' as const,
@@ -366,30 +371,17 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
 
     try {
-      const output = await this.callMcpTool(
+      const result = await this.callMcpToolResult(
         state.credentials,
         'get_login_session_status',
         { session_id: state.loginSessionId },
         60_000
       );
+      const output = result.text;
       if (state.cancelled || interactiveLogins.get(key) !== state) {
         return;
       }
       const session = this.parseLoginSessionStatus(output);
-      if (session.loginState === 'captcha_required') {
-        state.captchaObservations = (state.captchaObservations || 0) + 1;
-        if (state.captchaObservations < CAPTCHA_CONFIRMATION_POLLS) {
-          // The Xiaohongshu SMS dialog is named r-captcha-modal and its input
-          // mounts asynchronously. Keep polling so a transient DOM snapshot
-          // cannot permanently hide the OTP field in Postiz.
-          state.loginState = 'qr_scanned';
-          state.message =
-            'Verification dialog detected. Waiting briefly for the SMS code field…';
-          return;
-        }
-      } else {
-        state.captchaObservations = 0;
-      }
       state.loginState = session.loginState;
       state.otpAttempts = session.otpAttempts;
       state.otpMaxAttempts = session.otpMaxAttempts;
@@ -416,6 +408,24 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         return;
       }
 
+      if (session.loginState === 'captcha_required') {
+        const challengeImage = result.content.find(
+          (item) => item.type === 'image' && item.data
+        );
+        const challengeQrCode = this.mcpImageDataUrl(challengeImage);
+        if (!challengeQrCode) {
+          state.status = 'error';
+          state.message =
+            'Xiaohongshu requested a second security QR, but the installed MCP binary did not return its image. Update the binary and try again.';
+          state.qrCode = undefined;
+          return;
+        }
+        state.qrCode = challengeQrCode;
+        state.message =
+          'Scan this account-security QR with the already signed-in Xiaohongshu app, then approve the login. Postiz refreshed it in the same browser session.';
+        return;
+      }
+
       const messages: Record<RedNoteLoginState, string> = {
         waiting_for_scan:
           'Scan the QR code with the Xiaohongshu app to continue.',
@@ -426,7 +436,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         otp_submitted:
           'Verification code submitted. Waiting for Xiaohongshu to finish login…',
         captcha_required:
-          'Xiaohongshu requires an interactive CAPTCHA that cannot be completed through the OTP field. Request a new QR code or use the visible login tool.',
+          'Scan the account-security QR code below with the Xiaohongshu app.',
         authenticated: 'RedNote login completed.',
         failed: session.lastError
           ? `RedNote login failed: ${session.lastError}`
@@ -437,11 +447,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       };
       state.message = messages[session.loginState];
 
-      if (
-        ['captcha_required', 'failed', 'expired', 'cancelled'].includes(
-          session.loginState
-        )
-      ) {
+      if (['failed', 'expired', 'cancelled'].includes(session.loginState)) {
         state.status = 'error';
         state.qrCode = undefined;
         if (

@@ -15,7 +15,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 const RELEASE_REPOSITORY = 'mengbingrock/xiaohongshu-mcp';
-export const DEFAULT_REDNOTE_RELEASE = 'v2.8.0';
+export const DEFAULT_REDNOTE_RELEASE = 'v2.10.0';
 
 type PlatformAssets = {
   label: string;

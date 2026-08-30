@@ -41,7 +41,7 @@ const setEnvValue = (contents, key, value) => {
   return `${contents.replace(/\s*$/, '')}\n${line}\n`;
 };
 
-await mkdir(`${root}/config/rednote/v2.8.0`, {
+await mkdir(`${root}/config/rednote/v2.10.0`, {
   mode: 0o700,
   recursive: true,
 });
@@ -122,7 +122,7 @@ const updates = {
   POSTIZ_CONFIG_DIR: `${root}/config`,
   UPLOAD_DIRECTORY: `${root}/uploads`,
   NEXT_PUBLIC_UPLOAD_DIRECTORY: '/uploads',
-  XHS_MCP_INSTALL_DIR: `${root}/config/rednote/v2.8.0`,
+  XHS_MCP_INSTALL_DIR: `${root}/config/rednote/v2.10.0`,
   XHS_COOKIES_PATH: `${root}/config/rednote/cookies.json`,
   NOT_SECURED: 'false',
 };
