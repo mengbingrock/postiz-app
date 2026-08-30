@@ -11,7 +11,7 @@ WorkingDirectory=/opt/xiaohongshu-mcp/chineseinla-login
 Environment=HOME=/home/ubuntu
 Environment=GIN_MODE=release
 Environment=COOKIES_PATH=/opt/postiz/config/rednote/cookies.json
-ExecStart=/opt/postiz/config/rednote/v2.10.0/xiaohongshu-mcp-linux-amd64 -headless=true -port=127.0.0.1:18060 -chineseinla-headless=true -chineseinla-cdp-port=19224 -chineseinla-profile-dir=/opt/xiaohongshu-mcp/chineseinla-login/profile -chineseinla-cookies-file=/opt/xiaohongshu-mcp/chineseinla-login/chineseinla-cookies.json -chineseinla-state-file=/opt/xiaohongshu-mcp/chineseinla-login/data/prepared.json -chineseinla-preview-image=/opt/xiaohongshu-mcp/chineseinla-login/data/prepared-preview.png -chineseinla-browser-bin=/home/ubuntu/.cache/xiaohongshu-mcp/browser/148.0.7778.215/browser/chrome
+ExecStart=/opt/postiz/config/rednote/v2.10.1/xiaohongshu-mcp-linux-amd64 -headless=true -port=127.0.0.1:18060 -chineseinla-headless=true -chineseinla-cdp-port=19224 -chineseinla-profile-dir=/opt/xiaohongshu-mcp/chineseinla-login/profile -chineseinla-cookies-file=/opt/xiaohongshu-mcp/chineseinla-login/chineseinla-cookies.json -chineseinla-state-file=/opt/xiaohongshu-mcp/chineseinla-login/data/prepared.json -chineseinla-preview-image=/opt/xiaohongshu-mcp/chineseinla-login/data/prepared-preview.png -chineseinla-browser-bin=/home/ubuntu/.cache/xiaohongshu-mcp/browser/148.0.7778.215/browser/chrome
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
