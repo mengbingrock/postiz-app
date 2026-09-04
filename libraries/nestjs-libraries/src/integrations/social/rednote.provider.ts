@@ -15,7 +15,10 @@ import {
   PostResponse,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
-import { SocialAbstract } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import {
+  Disconnect,
+  SocialAbstract,
+} from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { RedNoteDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/rednote.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { Integration } from '@prisma/client';
@@ -55,6 +58,9 @@ export type McpToolResult = {
 };
 
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
+const SESSION_PREFLIGHT_TIMEOUT_MS = 45_000;
+const SESSION_EXPIRED_MESSAGE =
+  'The RedNote session has expired. Reconnect the RedNote channel before publishing.';
 const startingServers = new Map<string, Promise<void>>();
 type RedNoteLoginState =
   | 'waiting_for_scan'
@@ -903,6 +909,44 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return post[0]?.settings;
   }
 
+  private sessionIsLoggedOut(output: string) {
+    return /未登录|登录(?:状态)?(?:已)?过期|not logged in|login required|session expired/i.test(
+      output
+    );
+  }
+
+  protected async assertAuthenticatedSession(credentials: RedNoteCredentials) {
+    let output: string;
+    try {
+      output = await this.callMcpTool(
+        credentials,
+        'check_login_status',
+        {},
+        SESSION_PREFLIGHT_TIMEOUT_MS
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (this.sessionIsLoggedOut(message)) {
+        throw new Disconnect(
+          this.identifier,
+          JSON.stringify({ reason: 'session_expired' }),
+          '{}',
+          SESSION_EXPIRED_MESSAGE
+        );
+      }
+      throw error;
+    }
+
+    if (this.sessionIsLoggedOut(output)) {
+      throw new Disconnect(
+        this.identifier,
+        JSON.stringify({ reason: 'session_expired' }),
+        '{}',
+        SESSION_EXPIRED_MESSAGE
+      );
+    }
+  }
+
   private validateTitle(title: string) {
     const units = Array.from(title).reduce(
       (sum, character) => sum + (/^[\x00-\xff]$/.test(character) ? 0.5 : 1),
@@ -997,6 +1041,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
 
     const credentials = this.decodeCredentials(accessToken);
+    await this.assertAuthenticatedSession(credentials);
     const media = postDetails.flatMap((item) => item.media || []);
     const video = media.find(
       (item) => item.type === 'video' || /\.mp4(?:$|\?)/i.test(item.path)
