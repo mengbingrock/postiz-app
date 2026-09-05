@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "postiz-egress"
+version = "0.1.0"
+description = "Postiz MCP client with an opt-in local egress connector"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "AGPL-3.0-only" }
+authors = [{ name = "Postiz" }]
+dependencies = [
+  "httpx>=0.27,<1",
+  "keyring>=25,<27",
+  "websockets>=14,<16",
+]
+
+[project.scripts]
+postiz-mcp = "postiz_mcp.cli:main"
+postiz-egress = "postiz_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/postiz_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

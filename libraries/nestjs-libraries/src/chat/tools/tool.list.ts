@@ -11,6 +11,12 @@ import { UploadFromUrlTool } from '@gitroom/nestjs-libraries/chat/tools/upload.f
 import { UploadMediaTool } from '@gitroom/nestjs-libraries/chat/tools/upload.media.tool';
 import { PostsListTool } from '@gitroom/nestjs-libraries/chat/tools/posts.list.tool';
 import { PostSettingsTool } from '@gitroom/nestjs-libraries/chat/tools/post.settings.tool';
+import {
+  EgressProxyStartTool,
+  EgressProxyStatusTool,
+  EgressProxyStopTool,
+  EgressProxyTestTool,
+} from './egress.proxy.tools';
 
 export const toolList = [
   IntegrationListTool,
@@ -26,4 +32,8 @@ export const toolList = [
   GenerateImageTool,
   UploadMediaTool,
   UploadFromUrlTool,
+  EgressProxyStatusTool,
+  EgressProxyStartTool,
+  EgressProxyTestTool,
+  EgressProxyStopTool,
 ];

@@ -6,6 +6,8 @@ import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/o
 import { OAuthService } from '@gitroom/nestjs-libraries/database/prisma/oauth/oauth.service';
 import { runWithContext } from './async.storage';
 import { createOAuthMiddleware } from './oauth-middleware';
+import { EgressRelayService } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
+import { startEgressGateway } from '@gitroom/nestjs-libraries/egress/egress.gateway';
 const fixAcceptHeader = (req: Request) => {
   const value = 'application/json, text/event-stream';
   req.headers.accept = value;
@@ -29,6 +31,7 @@ export const startMcp = async (app: INestApplication) => {
   const mastraService = app.get(MastraService, { strict: false });
   const organizationService = app.get(OrganizationService, { strict: false });
   const oauthService = app.get(OAuthService, { strict: false });
+  const egressRelay = app.get(EgressRelayService, { strict: false });
 
   const resolveAuth = async (token: string) => {
     if (token.startsWith('pos_')) {
@@ -38,6 +41,8 @@ export const startMcp = async (app: INestApplication) => {
     }
     return organizationService.getOrgByApiKey(token);
   };
+
+  await startEgressGateway(app, resolveAuth, egressRelay);
 
   const mastra = await mastraService.mastra();
   const agent = mastra.getAgent('postiz');

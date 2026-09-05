@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import struct
+from typing import Any, Optional
+
+from websockets.asyncio.client import ClientConnection, connect
+
+from .config import Settings, egress_url
+
+LOGGER = logging.getLogger("postiz-mcp.egress")
+MAX_FRAME_BYTES = 1024 * 1024
+
+
+class LocalEgressConnector:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.streams: dict[int, tuple[asyncio.StreamReader, asyncio.StreamWriter, asyncio.Task[None]]] = {}
+        self.socket: Optional[ClientConnection] = None
+
+    async def run_forever(self) -> None:
+        delay = 1
+        while True:
+            try:
+                async with connect(
+                    egress_url(self.settings.mcp_url),
+                    additional_headers={
+                        "Authorization": f"Bearer {self.settings.api_key}",
+                        "X-Postiz-Device-Id": self.settings.device_id,
+                    },
+                    max_size=MAX_FRAME_BYTES + 4,
+                    ping_interval=20,
+                    ping_timeout=20,
+                ) as socket:
+                    self.socket = socket
+                    delay = 1
+                    LOGGER.info("local egress connector online as %s", self.settings.device_id)
+                    async for message in socket:
+                        if isinstance(message, bytes):
+                            await self._binary(message)
+                        else:
+                            await self._control(message)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                LOGGER.warning("egress connector offline: %s; retrying in %ss", error, delay)
+            finally:
+                self.socket = None
+                await self._close_all()
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
+
+    async def _control(self, raw: str) -> None:
+        try:
+            message = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        message_type = message.get("type")
+        if message_type == "open":
+            await self._open(message)
+        elif message_type == "close":
+            await self._close(int(message.get("streamId", -1)), notify=False)
+        elif message_type in {"lease_start", "lease_stop"}:
+            LOGGER.info("egress lease %s", "active" if message_type == "lease_start" else "stopped")
+
+    async def _open(self, message: dict[str, Any]) -> None:
+        stream_id = int(message.get("streamId", -1))
+        host = str(message.get("host", "")).lower().rstrip(".")
+        port = int(message.get("port", 0))
+        allowed = host == "chineseinla.com" or host.endswith(".chineseinla.com") or host == "api.ipify.org"
+        if stream_id < 1 or not allowed or port != 443:
+            await self._send_control("error", streamId=stream_id, message="Destination is not allowed")
+            return
+        try:
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=15)
+        except Exception as error:
+            await self._send_control("error", streamId=stream_id, message=str(error)[:300])
+            return
+        task = asyncio.create_task(self._read_local(stream_id, reader))
+        self.streams[stream_id] = (reader, writer, task)
+        await self._send_control("opened", streamId=stream_id)
+
+    async def _read_local(self, stream_id: int, reader: asyncio.StreamReader) -> None:
+        try:
+            while True:
+                chunk = await reader.read(64 * 1024)
+                if not chunk:
+                    break
+                socket = self.socket
+                if not socket:
+                    break
+                await socket.send(struct.pack(">I", stream_id) + chunk)
+        except (ConnectionError, asyncio.CancelledError):
+            pass
+        finally:
+            await self._close(stream_id, notify=True, from_reader=True)
+
+    async def _binary(self, frame: bytes) -> None:
+        if len(frame) < 4 or len(frame) > MAX_FRAME_BYTES + 4:
+            return
+        stream_id = struct.unpack(">I", frame[:4])[0]
+        stream = self.streams.get(stream_id)
+        if not stream:
+            return
+        writer = stream[1]
+        writer.write(frame[4:])
+        try:
+            await writer.drain()
+        except ConnectionError:
+            await self._close(stream_id, notify=True)
+
+    async def _send_control(self, message_type: str, **values: Any) -> None:
+        if self.socket:
+            await self.socket.send(json.dumps({"type": message_type, **values}))
+
+    async def _close(self, stream_id: int, notify: bool, from_reader: bool = False) -> None:
+        stream = self.streams.pop(stream_id, None)
+        if not stream:
+            return
+        _, writer, task = stream
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except ConnectionError:
+            pass
+        if not from_reader:
+            task.cancel()
+        if notify:
+            try:
+                await self._send_control("close", streamId=stream_id)
+            except Exception:
+                # A normal WebSocket shutdown can race the local TCP reader's
+                # EOF. The server already closes every stream when the socket
+                # goes away, so there is nothing left to notify in that case.
+                pass
+
+    async def _close_all(self) -> None:
+        await asyncio.gather(
+            *(self._close(stream_id, notify=False) for stream_id in list(self.streams)),
+            return_exceptions=True,
+        )
