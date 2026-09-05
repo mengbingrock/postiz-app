@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { RedNoteProvider } from './rednote.provider';
 import { Disconnect } from '../social.abstract';
 
@@ -79,4 +82,51 @@ test('RedNote publish converts an explicit expired-session tool error to a disco
       return true;
     }
   );
+});
+
+test('RedNote resolves only same-origin Postiz upload URLs to local files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'postiz-rednote-upload-'));
+  const nestedDirectory = join(directory, '2026', '09', '05');
+  const imagePath = join(nestedDirectory, 'cover.png');
+  const previousUploadDirectory = process.env.UPLOAD_DIRECTORY;
+  const previousFrontendUrl = process.env.FRONTEND_URL;
+
+  try {
+    await mkdir(nestedDirectory, { recursive: true });
+    await writeFile(imagePath, 'image');
+    process.env.UPLOAD_DIRECTORY = directory;
+    process.env.FRONTEND_URL = 'https://post.example.test';
+
+    const provider = new RedNoteProvider();
+    assert.equal(
+      await (provider as any).localOrPublicMediaPath(
+        'https://post.example.test/uploads/2026/09/05/cover.png'
+      ),
+      imagePath
+    );
+    assert.equal(
+      await (provider as any).localOrPublicMediaPath(
+        'https://elsewhere.example/uploads/2026/09/05/cover.png'
+      ),
+      'https://elsewhere.example/uploads/2026/09/05/cover.png'
+    );
+    assert.equal(
+      await (provider as any).localOrPublicMediaPath(
+        'https://post.example.test/uploads/%2e%2e/secret.png'
+      ),
+      'https://post.example.test/uploads/%2e%2e/secret.png'
+    );
+  } finally {
+    if (previousUploadDirectory === undefined) {
+      delete process.env.UPLOAD_DIRECTORY;
+    } else {
+      process.env.UPLOAD_DIRECTORY = previousUploadDirectory;
+    }
+    if (previousFrontendUrl === undefined) {
+      delete process.env.FRONTEND_URL;
+    } else {
+      process.env.FRONTEND_URL = previousFrontendUrl;
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
 });

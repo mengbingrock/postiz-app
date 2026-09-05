@@ -8,7 +8,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
   AuthTokenDetails,
   PostDetails,
@@ -977,6 +977,38 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return undefined;
   }
 
+  protected async existingPostizUploadPath(pathname: string) {
+    const uploadDirectory = process.env.UPLOAD_DIRECTORY?.trim();
+    if (!uploadDirectory) {
+      return undefined;
+    }
+
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(pathname);
+    } catch {
+      return undefined;
+    }
+
+    const relativePath = decodedPath.replace(/^\/+uploads\//, '');
+    if (relativePath === decodedPath) {
+      return undefined;
+    }
+
+    const base = resolve(uploadDirectory);
+    const candidate = resolve(base, relativePath);
+    if (candidate === base || !candidate.startsWith(base + sep)) {
+      return undefined;
+    }
+
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      return undefined;
+    }
+  }
+
   protected async localOrPublicMediaPath(value: string) {
     if (isAbsolute(value)) {
       return value;
@@ -988,13 +1020,22 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         if (['localhost', '127.0.0.1', '::1'].includes(url.hostname)) {
           return (await this.existingLocalPath(url.pathname)) || value;
         }
+
+        const frontendUrl = process.env.FRONTEND_URL?.trim();
+        if (frontendUrl && url.origin === new URL(frontendUrl).origin) {
+          return (await this.existingPostizUploadPath(url.pathname)) || value;
+        }
       } catch {
         return value;
       }
       return value;
     }
 
-    return (await this.existingLocalPath(value)) || value;
+    return (
+      (await this.existingPostizUploadPath(value)) ||
+      (await this.existingLocalPath(value)) ||
+      value
+    );
   }
 
   private async materializeVideo(value: string, directory: string) {

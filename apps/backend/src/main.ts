@@ -48,6 +48,14 @@ async function start() {
     },
   });
 
+  // A 10 MB image expands to roughly 13.4 MB when encoded as base64. Keep
+  // this larger parser scoped to MCP transports so regular API routes retain
+  // Nest's default request limit.
+  app.use(
+    ['/mcp', '/mcp-oauth', '/mcp-oauth-claude', '/message'],
+    json({ limit: '20mb' })
+  );
+
   await startMcp(app);
 
   app.useGlobalPipes(
