@@ -1,0 +1,46 @@
+{
+	https_port 4443
+	http_port 8080
+}
+
+# HAProxy owns public :443 and forwards non-REALITY SNI traffic to Caddy's
+# loopback TLS listener. Keep Browserless isolated on its existing port.
+browserless.truegrit.dev {
+	bind 127.0.0.1
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+	handle_path /browser/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
+
+post.truegrit.dev {
+	bind 127.0.0.1
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+	encode zstd gzip
+
+	# Canonical Postiz backend namespace. For example, /post/mcp is sent to
+	# the backend's /mcp endpoint without passing through the frontend rewrite.
+	handle_path /post/* {
+		reverse_proxy 127.0.0.1:3003
+	}
+
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:3003
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:4200
+	}
+}
