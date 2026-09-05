@@ -1,17 +1,83 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import os
 import struct
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, BinaryIO, Optional
 
 from websockets.asyncio.client import ClientConnection, connect
 
-from .config import Settings, egress_url
+from .config import Settings, config_path, egress_url
 
 LOGGER = logging.getLogger("postiz-mcp.egress")
 MAX_FRAME_BYTES = 1024 * 1024
+CONNECTOR_LOCK_RETRY_SECONDS = 2
+
+
+class ConnectorProcessLock:
+    """Ensure only one local connector owns a configured device ID."""
+
+    def __init__(self, settings: Settings):
+        identity = f"{settings.mcp_url}\0{settings.device_id}".encode()
+        suffix = hashlib.sha256(identity).hexdigest()[:16]
+        self.path = config_path().parent / f"connector-{suffix}.lock"
+        self.file: Optional[BinaryIO] = None
+
+    def acquire(self) -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock_file = self.path.open("a+b")
+        os.chmod(self.path, 0o600)
+        try:
+            self._lock(lock_file)
+        except (BlockingIOError, OSError):
+            lock_file.close()
+            return False
+        self.file = lock_file
+        return True
+
+    def release(self) -> None:
+        lock_file = self.file
+        if not lock_file:
+            return
+        self.file = None
+        try:
+            self._unlock(lock_file)
+        finally:
+            lock_file.close()
+
+    @staticmethod
+    def _lock(lock_file: BinaryIO) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0)
+            if not lock_file.read(1):
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+
+        import fcntl
+
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    @staticmethod
+    def _unlock(lock_file: BinaryIO) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+
+        import fcntl
+
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 class LocalEgressConnector:
@@ -21,6 +87,26 @@ class LocalEgressConnector:
         self.socket: Optional[ClientConnection] = None
 
     async def run_forever(self) -> None:
+        process_lock = ConnectorProcessLock(self.settings)
+        waiting_logged = False
+        while not process_lock.acquire():
+            if not waiting_logged:
+                LOGGER.info(
+                    "local egress connector for %s is already owned by another process; waiting",
+                    self.settings.device_id,
+                )
+                waiting_logged = True
+            await asyncio.sleep(CONNECTOR_LOCK_RETRY_SECONDS)
+
+        if waiting_logged:
+            LOGGER.info("local egress connector ownership acquired for %s", self.settings.device_id)
+
+        try:
+            await self._connect_forever()
+        finally:
+            process_lock.release()
+
+    async def _connect_forever(self) -> None:
         delay = 1
         while True:
             try:

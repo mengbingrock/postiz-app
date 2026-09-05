@@ -5,6 +5,8 @@ from typing import Any, Optional
 
 import httpx
 
+from . import __version__
+
 ACCEPT = "application/json, text/event-stream"
 
 
@@ -64,7 +66,7 @@ class RemoteMcp:
                 "params": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {},
-                    "clientInfo": {"name": "postiz-mcp", "version": "0.1.0"},
+                    "clientInfo": {"name": "postiz-mcp", "version": __version__},
                 },
             }
         )

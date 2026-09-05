@@ -3,8 +3,8 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "postiz-egress"
-version = "0.1.0"
+name = "post-truegrit-mcp"
+version = "0.1.1"
 description = "Postiz MCP client with an opt-in local egress connector"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -15,6 +15,10 @@ dependencies = [
   "keyring>=25,<27",
   "websockets>=14,<16",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mengbingrock/post-truegrit-mcp"
+Repository = "https://github.com/mengbingrock/post-truegrit-mcp"
 
 [project.scripts]
 postiz-mcp = "postiz_mcp.cli:main"

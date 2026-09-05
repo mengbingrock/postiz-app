@@ -1,8 +1,11 @@
 import asyncio
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from postiz_mcp.config import Settings
-from postiz_mcp.connector import LocalEgressConnector
+from postiz_mcp.connector import ConnectorProcessLock, LocalEgressConnector
 
 
 class ClosedSocket:
@@ -19,6 +22,22 @@ class Writer:
 
 
 class ConnectorTest(unittest.IsolatedAsyncioTestCase):
+    async def test_only_one_process_can_own_a_device_connector(self):
+        settings = Settings("https://post.example.com/api/mcp", "secret", "test-device")
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "postiz_mcp.connector.config_path",
+            return_value=Path(directory) / "config.json",
+        ):
+            first = ConnectorProcessLock(settings)
+            second = ConnectorProcessLock(settings)
+
+            self.assertTrue(first.acquire())
+            self.assertFalse(second.acquire())
+
+            first.release()
+            self.assertTrue(second.acquire())
+            second.release()
+
     async def test_normal_websocket_shutdown_does_not_leak_stream_error(self):
         connector = LocalEgressConnector(
             Settings("https://post.example.com/api/mcp", "secret", "test-device")
