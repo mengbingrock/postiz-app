@@ -330,6 +330,10 @@ export class IntegrationService {
     return this._integrationRepository.refreshNeeded(org, id);
   }
 
+  async clearRefreshNeeded(org: string, id: string) {
+    return this._integrationRepository.clearRefreshNeeded(org, id);
+  }
+
   async setBetweenRefreshSteps(id: string) {
     return this._integrationRepository.setBetweenRefreshSteps(id);
   }

@@ -14,7 +14,7 @@ import { ioRedis } from '@gitroom/nestjs-libraries/redis/redis.service';
 import { IntegrationManager } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { IntegrationService } from '@gitroom/nestjs-libraries/database/prisma/integrations/integration.service';
 import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
-import { Organization, User } from '@prisma/client';
+import { Integration, Organization, User } from '@prisma/client';
 import { IntegrationFunctionDto } from '@gitroom/nestjs-libraries/dtos/integrations/integration.function.dto';
 import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
 import { pricing } from '@gitroom/nestjs-libraries/database/prisma/subscriptions/pricing';
@@ -40,6 +40,32 @@ import { uniqBy } from 'lodash';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import {
+  existingTokenProbeProviders,
+  hasLiveChannelProbe,
+  metaChannelAccessToken,
+  metaProbeProviders,
+  refreshProbeProviders,
+} from '@gitroom/backend/api/routes/channel.check.helpers';
+
+type ChannelCheckStatus =
+  | 'working'
+  | 'reconnect_required'
+  | 'failed'
+  | 'unverified'
+  | 'disabled';
+
+type ChannelCheckResult = {
+  id: string;
+  name: string;
+  identifier: string;
+  status: ChannelCheckStatus;
+  message: string;
+  verified: boolean;
+};
+
+const reconnectMessage =
+  /expired|invalid|not (?:logged|authenticated)|reconnect|revoked|unauthori[sz]ed|forbidden|access denied/i;
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -61,6 +87,229 @@ export class IntegrationsController {
     return this._integrationManager.getSocialIntegration(
       'chineseinla'
     ) as ChineseInLAProvider;
+  }
+
+  private channelCheckResult(
+    integration: Integration,
+    status: ChannelCheckStatus,
+    message: string,
+    verified: boolean
+  ): ChannelCheckResult {
+    return {
+      id: integration.id,
+      name: integration.name,
+      identifier: integration.providerIdentifier,
+      status,
+      message,
+      verified,
+    };
+  }
+
+  private async checkMetaChannel(integration: Integration) {
+    const version = process.env.FACEBOOK_GRAPH_API_VERSION || 'v26.0';
+    const accessToken = metaChannelAccessToken(
+      integration.providerIdentifier,
+      integration.token
+    );
+    const response = await fetch(
+      `https://graph.facebook.com/${version}/${encodeURIComponent(
+        integration.internalId
+      )}?fields=id,name,username`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(20_000),
+      }
+    );
+    const result = await response.json().catch(() => ({}));
+    if (response.ok && result?.id) {
+      return this.channelCheckResult(
+        integration,
+        'working',
+        'The provider accepted the saved access token.',
+        true
+      );
+    }
+
+    const authFailure =
+      response.status === 401 ||
+      result?.error?.code === 102 ||
+      result?.error?.code === 190;
+    if (authFailure) {
+      return this.channelCheckResult(
+        integration,
+        'reconnect_required',
+        'The saved access token is expired or was revoked. Reconnect this channel.',
+        true
+      );
+    }
+
+    return this.channelCheckResult(
+      integration,
+      'failed',
+      `The provider health check failed${
+        response.status ? ` (HTTP ${response.status})` : ''
+      }. Try again before reconnecting.`,
+      true
+    );
+  }
+
+  private async checkRefreshableChannel(integration: Integration) {
+    if (!integration.refreshToken) {
+      return this.channelCheckResult(
+        integration,
+        'reconnect_required',
+        'No refresh credential is stored. Reconnect this channel.',
+        true
+      );
+    }
+
+    const provider = this._integrationManager.getSocialIntegration(
+      integration.providerIdentifier
+    );
+    let clientInformation:
+      | { client_id: string; client_secret: string; instanceUrl: string }
+      | undefined;
+    if (provider.customOAuthCredentials && integration.customInstanceDetails) {
+      try {
+        clientInformation = JSON.parse(
+          AuthService.fixedDecryption(integration.customInstanceDetails)
+        );
+      } catch {
+        return this.channelCheckResult(
+          integration,
+          'reconnect_required',
+          'The channel OAuth app credentials cannot be read. Reconnect this channel.',
+          true
+        );
+      }
+    }
+
+    const refreshed = await provider.refreshToken(
+      integration.refreshToken,
+      clientInformation
+    );
+    if (!refreshed?.accessToken || !refreshed?.expiresIn) {
+      return this.channelCheckResult(
+        integration,
+        'reconnect_required',
+        'The provider rejected the saved refresh credential. Reconnect this channel.',
+        true
+      );
+    }
+
+    await this._integrationService.createOrUpdateIntegration(
+      undefined,
+      !!provider.oneTimeToken,
+      integration.organizationId,
+      integration.name,
+      undefined,
+      'social',
+      integration.internalId,
+      integration.providerIdentifier,
+      refreshed.accessToken,
+      refreshed.refreshToken || integration.refreshToken,
+      refreshed.expiresIn
+    );
+    return this.channelCheckResult(
+      integration,
+      'working',
+      'The provider refreshed and accepted the channel credentials.',
+      true
+    );
+  }
+
+  private async checkExistingTokenChannel(integration: Integration) {
+    const provider = this._integrationManager.getSocialIntegration(
+      integration.providerIdentifier
+    );
+    const result = await provider.authenticate({
+      code: integration.token,
+      codeVerifier: '',
+      refresh: integration.internalId,
+    });
+    if (typeof result !== 'string') {
+      return this.channelCheckResult(
+        integration,
+        'working',
+        integration.providerIdentifier === 'chineseinla' ||
+          integration.providerIdentifier === 'rednote' ||
+          integration.providerIdentifier === 'reddit-agent'
+          ? 'The saved browser session and cookies are authenticated.'
+          : 'The provider accepted the saved credentials.',
+        true
+      );
+    }
+    const needsReconnect = reconnectMessage.test(result);
+    return this.channelCheckResult(
+      integration,
+      needsReconnect ? 'reconnect_required' : 'failed',
+      needsReconnect
+        ? 'The saved session or credentials are no longer authenticated. Reconnect this channel.'
+        : result,
+      true
+    );
+  }
+
+  private async checkChannel(integration: Integration) {
+    if (integration.disabled) {
+      return this.channelCheckResult(
+        integration,
+        'disabled',
+        'This channel is disabled, so no provider request was made.',
+        false
+      );
+    }
+    if (
+      integration.refreshNeeded &&
+      !hasLiveChannelProbe(integration.providerIdentifier)
+    ) {
+      return this.channelCheckResult(
+        integration,
+        'reconnect_required',
+        'Postiz already marked this channel for reconnection.',
+        true
+      );
+    }
+
+    try {
+      if (existingTokenProbeProviders.has(integration.providerIdentifier)) {
+        return await this.checkExistingTokenChannel(integration);
+      }
+      if (metaProbeProviders.has(integration.providerIdentifier)) {
+        return await this.checkMetaChannel(integration);
+      }
+      if (refreshProbeProviders.has(integration.providerIdentifier)) {
+        return await this.checkRefreshableChannel(integration);
+      }
+      if (
+        integration.tokenExpiration &&
+        integration.tokenExpiration.getTime() <= Date.now()
+      ) {
+        return this.channelCheckResult(
+          integration,
+          'reconnect_required',
+          'The stored token has expired. Reconnect this channel.',
+          false
+        );
+      }
+      return this.channelCheckResult(
+        integration,
+        'unverified',
+        'Postiz has not marked this channel as expired, but this provider has no safe live health probe.',
+        false
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      const needsReconnect = reconnectMessage.test(message);
+      return this.channelCheckResult(
+        integration,
+        needsReconnect ? 'reconnect_required' : 'failed',
+        needsReconnect
+          ? 'The provider rejected the saved session or credentials. Reconnect this channel.'
+          : 'The live provider check failed. Try again before reconnecting.',
+        true
+      );
+    }
   }
 
   @Post('/chineseinla/login')
@@ -337,6 +586,47 @@ export class IntegrationsController {
           };
         })
       ),
+    };
+  }
+
+  @Post('/check-all')
+  @Header('Cache-Control', 'no-store, private')
+  async checkAllChannels(@GetOrgFromRequest() org: Organization) {
+    const integrations = await this._integrationService.getIntegrationsList(
+      org.id
+    );
+    const results: ChannelCheckResult[] = new Array(integrations.length);
+    let nextIndex = 0;
+    const workers = Array.from(
+      { length: Math.min(3, integrations.length) },
+      async () => {
+        while (nextIndex < integrations.length) {
+          const index = nextIndex++;
+          const integration = integrations[index];
+          const result = await this.checkChannel(integration);
+          results[index] = result;
+          if (
+            result.status === 'reconnect_required' &&
+            !integration.refreshNeeded
+          ) {
+            await this._integrationService.refreshNeeded(
+              org.id,
+              integration.id
+            );
+          } else if (result.status === 'working' && integration.refreshNeeded) {
+            await this._integrationService.clearRefreshNeeded(
+              org.id,
+              integration.id
+            );
+          }
+        }
+      }
+    );
+    await Promise.all(workers);
+
+    return {
+      checkedAt: new Date().toISOString(),
+      results,
     };
   }
 

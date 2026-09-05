@@ -427,6 +427,18 @@ export class IntegrationRepository {
     });
   }
 
+  clearRefreshNeeded(org: string, id: string) {
+    return this._integration.model.integration.update({
+      where: {
+        id,
+        organizationId: org,
+      },
+      data: {
+        refreshNeeded: false,
+      },
+    });
+  }
+
   updateNameAndUrl(id: string, name: string, url: string) {
     return this._integration.model.integration.update({
       where: {
