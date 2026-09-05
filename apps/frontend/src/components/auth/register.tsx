@@ -98,6 +98,7 @@ export function RegisterAfter({
     neynarClientId,
     appleClientId,
     billingEnabled,
+    googleAuthOnly,
   } = useVariables();
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -159,7 +160,9 @@ export function RegisterAfter({
         <div className="flex flex-col flex-1">
           <div>
             <h1 className="text-[40px] font-[500] -tracking-[0.8px] text-start cursor-pointer">
-              {t('sign_up', 'Sign Up')}
+              {googleAuthOnly && !isAfterProvider
+                ? t('sign_in', 'Sign In')
+                : t('sign_up', 'Sign Up')}
             </h1>
           </div>
           <div className="text-[14px] mt-[32px] mb-[12px]">
@@ -169,6 +172,8 @@ export function RegisterAfter({
             {!isAfterProvider &&
               (!isGeneral ? (
                 <GithubProvider />
+              ) : googleAuthOnly ? (
+                <GoogleProvider fullLabel />
               ) : (
                 <div className="gap-[8px] flex">
                   {genericOauth && isGeneral ? (
@@ -181,7 +186,7 @@ export function RegisterAfter({
                   {billingEnabled && <WalletProvider />}
                 </div>
               ))}
-            {!isAfterProvider && (
+            {!isAfterProvider && !googleAuthOnly && (
               <div className="h-[20px] mb-[24px] mt-[24px] relative">
                 <div className="absolute w-full h-[1px] bg-fifth top-[50%] -translate-y-[50%]" />
                 <div
@@ -193,7 +198,7 @@ export function RegisterAfter({
             )}
             <div className="flex flex-col gap-[12px]">
               <div className="text-textColor">
-                {!isAfterProvider && (
+                {!isAfterProvider && !googleAuthOnly && (
                   <>
                     <Input
                       label="Email"
@@ -212,60 +217,66 @@ export function RegisterAfter({
                     />
                   </>
                 )}
-                <Input
-                  label="Company"
-                  translationKey="label_company"
-                  {...form.register('company')}
-                  autoComplete="off"
-                  type="text"
-                  placeholder={t('label_company', 'Company')}
-                />
-              </div>
-              <div className={clsx('text-[12px]')}>
-                {t(
-                  'by_registering_you_agree_to_our',
-                  'By registering you agree to our'
+                {(isAfterProvider || !googleAuthOnly) && (
+                  <Input
+                    label="Company"
+                    translationKey="label_company"
+                    {...form.register('company')}
+                    autoComplete="off"
+                    type="text"
+                    placeholder={t('label_company', 'Company')}
+                  />
                 )}
-                &nbsp;
-                <a
-                  href={`https://postiz.com/terms`}
-                  className="underline hover:font-bold"
-                  rel="nofollow"
-                >
-                  {t('terms_of_service', 'Terms of Service')}
-                </a>
-                &nbsp;
-                {t('and', 'and')}&nbsp;
-                <a
-                  href={`https://postiz.com/privacy`}
-                  rel="nofollow"
-                  className="underline hover:font-bold"
-                >
-                  {t('privacy_policy', 'Privacy Policy')}
-                </a>
-                &nbsp;
               </div>
-              <div className="text-center mt-6">
-                <div className="w-full flex">
-                  <Button
-                    type="submit"
-                    className="flex-1 rounded-[10px] !h-[52px]"
-                    loading={loading}
-                  >
-                    {t('create_account', 'Create Account')}
-                  </Button>
-                </div>
-                <p className="mt-4 text-sm">
-                  {t('already_have_an_account', 'Already Have An Account?')}
+              {(isAfterProvider || !googleAuthOnly) && (
+                <div className={clsx('text-[12px]')}>
+                  {t(
+                    'by_registering_you_agree_to_our',
+                    'By registering you agree to our'
+                  )}
                   &nbsp;
-                  <Link
-                    href="/auth/login"
-                    className="underline  cursor-pointer"
+                  <a
+                    href={`https://postiz.com/terms`}
+                    className="underline hover:font-bold"
+                    rel="nofollow"
                   >
-                    {t('sign_in', 'Sign In')}
-                  </Link>
-                </p>
-              </div>
+                    {t('terms_of_service', 'Terms of Service')}
+                  </a>
+                  &nbsp;
+                  {t('and', 'and')}&nbsp;
+                  <a
+                    href={`https://postiz.com/privacy`}
+                    rel="nofollow"
+                    className="underline hover:font-bold"
+                  >
+                    {t('privacy_policy', 'Privacy Policy')}
+                  </a>
+                  &nbsp;
+                </div>
+              )}
+              {(isAfterProvider || !googleAuthOnly) && (
+                <div className="text-center mt-6">
+                  <div className="w-full flex">
+                    <Button
+                      type="submit"
+                      className="flex-1 rounded-[10px] !h-[52px]"
+                      loading={loading}
+                    >
+                      {t('create_account', 'Create Account')}
+                    </Button>
+                  </div>
+                  <p className="mt-4 text-sm">
+                    {t('already_have_an_account', 'Already Have An Account?')}
+                    &nbsp;
+                    <Link
+                      href="/auth/login"
+                      className="underline  cursor-pointer"
+                    >
+                      {t('sign_in', 'Sign In')}
+                    </Link>
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -3,7 +3,11 @@
 import { useCallback } from 'react';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
-export const GoogleProvider = () => {
+export const GoogleProvider = ({
+  fullLabel = false,
+}: {
+  fullLabel?: boolean;
+}) => {
   const fetch = useFetch();
   const t = useT();
   const gotoLogin = useCallback(async () => {
@@ -40,7 +44,11 @@ export const GoogleProvider = () => {
           />
         </svg>
       </div>
-      <div className="block xs:hidden">{t('google', 'Google')}</div>
+      <div className={fullLabel ? 'block' : 'block xs:hidden'}>
+        {fullLabel
+          ? t('continue_with_google', 'Continue with Google')
+          : t('google', 'Google')}
+      </div>
     </div>
   );
 };

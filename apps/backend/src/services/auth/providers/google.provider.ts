@@ -5,14 +5,31 @@ import {
 } from '@gitroom/backend/services/auth/providers.interface';
 
 const defaultRedirect = () =>
+  process.env.GOOGLE_AUTH_REDIRECT_URI ||
   `${process.env.FRONTEND_URL}/integrations/social/youtube`;
 
-const makeClient = (redirectUri: string) =>
-  new google.auth.OAuth2({
-    clientId: process.env.YOUTUBE_CLIENT_ID,
-    clientSecret: process.env.YOUTUBE_CLIENT_SECRET,
+const getClientId = () =>
+  process.env.GOOGLE_AUTH_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID;
+
+const getClientSecret = () =>
+  process.env.GOOGLE_AUTH_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET;
+
+const makeClient = (redirectUri: string) => {
+  const clientId = getClientId();
+  const clientSecret = getClientSecret();
+
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'Google sign-in is not configured. Set GOOGLE_AUTH_CLIENT_ID and GOOGLE_AUTH_CLIENT_SECRET.'
+    );
+  }
+
+  return new google.auth.OAuth2({
+    clientId,
+    clientSecret,
     redirectUri,
   });
+};
 
 @AuthProvider({ provider: 'GOOGLE' })
 export class GoogleProvider extends AuthProviderAbstract {
@@ -20,7 +37,7 @@ export class GoogleProvider extends AuthProviderAbstract {
     const redirectUri = query?.redirect_uri || defaultRedirect();
     return makeClient(redirectUri).generateAuthUrl({
       access_type: 'online',
-      prompt: 'consent',
+      prompt: 'select_account',
       state: query?.state || 'login',
       redirect_uri: redirectUri,
       scope: [
@@ -46,6 +63,7 @@ export class GoogleProvider extends AuthProviderAbstract {
     return {
       id: data.id!,
       email: data.email!,
+      emailVerified: data.verified_email === true,
     };
   }
 }

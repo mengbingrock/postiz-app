@@ -32,6 +32,7 @@ export function Login() {
     appleClientId,
     billingEnabled,
     genericOauth,
+    googleAuthOnly,
   } = useVariables();
   const resolver = useMemo(() => {
     return classValidatorResolver(LoginUserDto);
@@ -79,7 +80,9 @@ export function Login() {
             {t('continue_with', 'Continue With')}
           </div>
           <div className="flex flex-col">
-            {isGeneral && genericOauth ? (
+            {googleAuthOnly ? (
+              <GoogleProvider fullLabel />
+            ) : isGeneral && genericOauth ? (
               <OauthProvider />
             ) : !isGeneral ? (
               <GithubProvider />
@@ -91,74 +94,78 @@ export function Login() {
                 {billingEnabled && <WalletProvider />}
               </div>
             )}
-            <div className="h-[20px] mb-[24px] mt-[24px] relative">
-              <div className="absolute w-full h-[1px] bg-fifth top-[50%] -translate-y-[50%]" />
-              <div
-                className={`absolute z-[1] justify-center items-center w-full start-0 -top-[4px] flex`}
-              >
-                <div className="px-[16px]">{t('or', 'or')}</div>
+            {!googleAuthOnly && (
+              <div className="h-[20px] mb-[24px] mt-[24px] relative">
+                <div className="absolute w-full h-[1px] bg-fifth top-[50%] -translate-y-[50%]" />
+                <div
+                  className={`absolute z-[1] justify-center items-center w-full start-0 -top-[4px] flex`}
+                >
+                  <div className="px-[16px]">{t('or', 'or')}</div>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col gap-[12px]">
-              <div className="text-textColor">
-                <Input
-                  label="Email"
-                  translationKey="label_email"
-                  {...form.register('email')}
-                  type="email"
-                  placeholder={t('email_address', 'Email Address')}
-                />
-                <Input
-                  label="Password"
-                  translationKey="label_password"
-                  {...form.register('password')}
-                  autoComplete="off"
-                  type="password"
-                  placeholder={t('label_password', 'Password')}
-                />
-              </div>
-              {notActivated && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-[10px] p-4 mb-4">
-                  <p className="text-amber-400 text-sm mb-2">
-                    {t(
-                      'account_not_activated',
-                      'Your account is not activated yet. Please check your email for the activation link.'
-                    )}
+            )}
+            {!googleAuthOnly && (
+              <div className="flex flex-col gap-[12px]">
+                <div className="text-textColor">
+                  <Input
+                    label="Email"
+                    translationKey="label_email"
+                    {...form.register('email')}
+                    type="email"
+                    placeholder={t('email_address', 'Email Address')}
+                  />
+                  <Input
+                    label="Password"
+                    translationKey="label_password"
+                    {...form.register('password')}
+                    autoComplete="off"
+                    type="password"
+                    placeholder={t('label_password', 'Password')}
+                  />
+                </div>
+                {notActivated && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-[10px] p-4 mb-4">
+                    <p className="text-amber-400 text-sm mb-2">
+                      {t(
+                        'account_not_activated',
+                        'Your account is not activated yet. Please check your email for the activation link.'
+                      )}
+                    </p>
+                    <Link
+                      href="/auth/activate"
+                      className="text-amber-400 underline hover:font-bold text-sm"
+                    >
+                      {t('resend_activation_email', 'Resend Activation Email')}
+                    </Link>
+                  </div>
+                )}
+                <div className="text-center mt-6">
+                  <div className="w-full flex">
+                    <Button
+                      type="submit"
+                      className="flex-1 rounded-[10px] !h-[52px]"
+                      loading={loading}
+                    >
+                      {t('sign_in_1', 'Sign in')}
+                    </Button>
+                  </div>
+                  <p className="mt-4 text-sm">
+                    {t('don_t_have_an_account', "Don't Have An Account?")}&nbsp;
+                    <Link href="/auth" className="underline cursor-pointer">
+                      {t('sign_up', 'Sign Up')}
+                    </Link>
                   </p>
-                  <Link
-                    href="/auth/activate"
-                    className="text-amber-400 underline hover:font-bold text-sm"
-                  >
-                    {t('resend_activation_email', 'Resend Activation Email')}
-                  </Link>
+                  <p className="mt-4 text-sm">
+                    <Link
+                      href="/auth/forgot"
+                      className="underline hover:font-bold cursor-pointer"
+                    >
+                      {t('forgot_password', 'Forgot password')}
+                    </Link>
+                  </p>
                 </div>
-              )}
-              <div className="text-center mt-6">
-                <div className="w-full flex">
-                  <Button
-                    type="submit"
-                    className="flex-1 rounded-[10px] !h-[52px]"
-                    loading={loading}
-                  >
-                    {t('sign_in_1', 'Sign in')}
-                  </Button>
-                </div>
-                <p className="mt-4 text-sm">
-                  {t('don_t_have_an_account', "Don't Have An Account?")}&nbsp;
-                  <Link href="/auth" className="underline cursor-pointer">
-                    {t('sign_up', 'Sign Up')}
-                  </Link>
-                </p>
-                <p className="mt-4 text-sm">
-                  <Link
-                    href="/auth/forgot"
-                    className="underline hover:font-bold cursor-pointer"
-                  >
-                    {t('forgot_password', 'Forgot password')}
-                  </Link>
-                </p>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </form>

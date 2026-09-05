@@ -172,6 +172,18 @@ export class UsersRepository {
     });
   }
 
+  linkAuthProvider(userId: string, provider: Provider, providerId: string) {
+    return this._user.model.user.update({
+      where: { id: userId },
+      data: {
+        providerName: provider,
+        providerId,
+        password: null,
+        activated: true,
+      },
+    });
+  }
+
   async deleteAccount(userId: string) {
     const user = await this._user.model.user.findUnique({
       where: {

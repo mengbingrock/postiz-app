@@ -23,6 +23,13 @@ export class AuthService {
   ) {}
   async canRegister(provider: string) {
     if (
+      process.env.GOOGLE_AUTH_ONLY === 'true' &&
+      provider === Provider.LOCAL
+    ) {
+      return false;
+    }
+
+    if (
       process.env.DISABLE_REGISTRATION !== 'true' ||
       provider === Provider.GENERIC
     ) {
@@ -39,6 +46,8 @@ export class AuthService {
     userAgent: string,
     addToOrg?: boolean | { orgId: string; role: 'USER' | 'ADMIN'; id: string }
   ) {
+    this.assertAllowedProvider(provider);
+
     if (provider === Provider.LOCAL) {
       if (process.env.DISALLOW_PLUS && body.email.includes('+')) {
         throw new Error('Email with plus sign is not allowed');
@@ -147,9 +156,9 @@ export class AuthService {
       throw new Error('Invalid provider token');
     }
 
-    const user = await this._userService.getUserByProvider(
-      providerUser.id,
-      provider
+    const user = await this.getProviderUserOrLinkExistingAccount(
+      provider,
+      providerUser
     );
     if (user) {
       return user;
@@ -187,6 +196,50 @@ export class AuthService {
     }
 
     return create.users[0].user;
+  }
+
+  private async getProviderUserOrLinkExistingAccount(
+    provider: Provider,
+    providerUser: { email: string; id: string; emailVerified?: boolean }
+  ) {
+    const user = await this._userService.getUserByProvider(
+      providerUser.id,
+      provider
+    );
+    if (user) {
+      return user;
+    }
+
+    if (
+      process.env.GOOGLE_AUTH_ONLY === 'true' &&
+      provider === Provider.GOOGLE
+    ) {
+      if (!providerUser.emailVerified) {
+        throw new Error('Your Google email address is not verified');
+      }
+
+      const localUser = await this._userService.getUserByEmail(
+        providerUser.email
+      );
+      if (localUser) {
+        return this._userService.linkAuthProvider(
+          localUser.id,
+          provider,
+          providerUser.id
+        );
+      }
+    }
+
+    return null;
+  }
+
+  private assertAllowedProvider(provider: Provider | string) {
+    if (
+      process.env.GOOGLE_AUTH_ONLY === 'true' &&
+      provider !== Provider.GOOGLE
+    ) {
+      throw new Error('This Postiz instance only allows Google sign-in');
+    }
   }
 
   private async _track(
@@ -289,6 +342,7 @@ export class AuthService {
   }
 
   oauthLink(provider: string, query?: any) {
+    this.assertAllowedProvider(provider);
     const providerInstance = this._providerManager.getProvider(provider);
     return providerInstance.generateLink(query);
   }
@@ -300,6 +354,7 @@ export class AuthService {
     state?: string,
     stateCookie?: string
   ) {
+    this.assertAllowedProvider(provider);
     // the mobile app passes redirect_uri and keeps no cookies, the web flow
     // never passes it, so the state nonce is only enforced for the web flow
     if (
@@ -316,9 +371,9 @@ export class AuthService {
     if (!user) {
       throw new Error('Invalid user');
     }
-    const checkExists = await this._userService.getUserByProvider(
-      user.id,
-      provider as Provider
+    const checkExists = await this.getProviderUserOrLinkExistingAccount(
+      provider as Provider,
+      user
     );
     if (checkExists) {
       return { jwt: await this.jwt(checkExists) };

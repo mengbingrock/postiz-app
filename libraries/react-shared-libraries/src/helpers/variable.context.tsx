@@ -7,6 +7,7 @@ interface VariableContextInterface {
   isChatBase: boolean;
   isGeneral: boolean;
   genericOauth: boolean;
+  googleAuthOnly: boolean;
   oauthLogoUrl: string;
   oauthDisplayName: string;
   mcpUrl?: string;
@@ -39,6 +40,7 @@ const VariableContext = createContext({
   billingEnabled: false,
   isGeneral: true,
   genericOauth: false,
+  googleAuthOnly: false,
   isChatBase: false,
   oauthLogoUrl: '',
   googleAdsId: '',

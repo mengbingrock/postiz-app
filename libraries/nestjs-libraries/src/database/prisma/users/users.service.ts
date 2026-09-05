@@ -41,6 +41,10 @@ export class UsersService {
     return this._usersRepository.getUserByProvider(providerId, provider);
   }
 
+  linkAuthProvider(userId: string, provider: Provider, providerId: string) {
+    return this._usersRepository.linkAuthProvider(userId, provider, providerId);
+  }
+
   async switchUser(
     currentUserId: string,
     targetUserId: string,
