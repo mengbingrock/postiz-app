@@ -18,6 +18,7 @@ import {
   ValidUrlExtension,
   ValidUrlPath,
 } from '@gitroom/helpers/utils/valid.url.path';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 type ChineseInLALoginSession = {
   session_id: string;
@@ -714,7 +715,7 @@ export class ChineseInLAProvider
           content,
           media: attachments.map((path) => ({
             path,
-            type: /\.mp4(?:$|\?)/i.test(path) ? 'video' : 'image',
+            type: hasVideoExtension(path) ? 'video' : 'image',
           })),
         },
       ]
@@ -752,7 +753,7 @@ export class ChineseInLAProvider
 
     const media = value.flatMap((item) => item.media || []);
     const videos = media.filter(
-      (item) => item.type === 'video' || /\.mp4(?:$|\?)/i.test(item.path || '')
+      (item) => item.type === 'video' || hasVideoExtension(item.path)
     );
     const images = media.filter((item) => !videos.includes(item));
     const imagePaths = await Promise.all(

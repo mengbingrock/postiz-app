@@ -9,7 +9,10 @@ import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import sharp from 'sharp';
 import { lookup } from 'mime-types';
 import { readOrFetch } from '@gitroom/helpers/utils/read.or.fetch';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import {
+  hasExtension,
+  hasVideoExtension,
+} from '@gitroom/helpers/utils/has.extension';
 import { timer } from '@gitroom/helpers/utils/timer';
 import {
   BadBody,
@@ -295,7 +298,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     grace?: boolean;
   }> {
     // Determine the appropriate endpoint based on file type
-    const isVideo = hasExtension(fileName, 'mp4');
+    const isVideo = hasVideoExtension(fileName);
     const isPdf = hasExtension(fileName, 'pdf');
 
     const fileSizeBytes = Buffer.isBuffer(picture)
@@ -606,7 +609,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
           Buffer.isBuffer(media.buffer)
         ) {
           mediaBuffer = (media as any).buffer;
-        } else if (hasExtension(media.path, 'mp4')) {
+        } else if (hasVideoExtension(media.path)) {
           // Videos are never buffered: uploadPicture streams them from the
           // source chunk-by-chunk.
           mediaBuffer = { path: media.path };

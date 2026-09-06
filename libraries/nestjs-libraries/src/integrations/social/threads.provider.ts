@@ -17,7 +17,7 @@ import { capitalize, chunk } from 'lodash';
 import { Plug } from '@gitroom/helpers/decorators/plug.decorator';
 import { Integration } from '@prisma/client';
 import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validation';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 export class ThreadsProvider extends SocialAbstract implements SocialProvider {
   identifier = 'threads';
@@ -248,7 +248,7 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
     isCarouselItem = false,
     replyToId?: string
   ): Promise<string> {
-    const mediaType = hasExtension(media.path, 'mp4')
+    const mediaType = hasVideoExtension(media.path)
       ? 'video_url'
       : 'image_url';
     const mediaParams = new URLSearchParams({

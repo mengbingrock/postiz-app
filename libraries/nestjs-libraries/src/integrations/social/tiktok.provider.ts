@@ -16,7 +16,7 @@ import {
 } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { TikTokDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/tiktok.dto';
 import { timer } from '@gitroom/helpers/utils/timer';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 import { createReadStream } from 'fs';
 import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
 import { Integration } from '@prisma/client';
@@ -523,7 +523,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
   }
 
   private buildTikokPostInfoBody(firstPost: PostDetails<TikTokDto>) {
-    const isPhoto = !hasExtension(firstPost?.media?.[0]?.path, 'mp4');
+    const isPhoto = !hasVideoExtension(firstPost?.media?.[0]?.path);
     const method = this.contentPostingMethod(firstPost);
 
     if (method === 'DIRECT_POST') {
@@ -584,7 +584,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
   // OLD PULL_FROM_URL IMPLEMENTATION (kept for when the TikTok PULL bug is fixed)
   // ---------------------------------------------------------------------------
   // private buildTikokSourceInfoBody(firstPost: PostDetails<TikTokDto>) {
-  //   const isPhoto = !hasExtension(firstPost?.media?.[0]?.path, 'mp4');
+  //   const isPhoto = !hasVideoExtension(firstPost?.media?.[0]?.path);
   //
   //   if (isPhoto) {
   //     return {
@@ -622,7 +622,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
   //   integration: Integration
   // ): Promise<PostResponse[]> {
   //   const [firstPost] = postDetails;
-  //   const isPhoto = !hasExtension(firstPost?.media?.[0]?.path, 'mp4');
+  //   const isPhoto = !hasVideoExtension(firstPost?.media?.[0]?.path);
   //
   //   console.log({
   //     ...this.buildTikokPostInfoBody(firstPost),
@@ -634,7 +634,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
   //     await this.fetch(
   //       `https://open.tiktokapis.com/v2/post/publish${this.postingMethod(
   //         firstPost.settings.content_posting_method,
-  //         !hasExtension(firstPost?.media?.[0]?.path, 'mp4')
+  //         !hasVideoExtension(firstPost?.media?.[0]?.path)
   //       )}`,
   //       {
   //         method: 'POST',
@@ -772,7 +772,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
     firstPost: PostDetails<TikTokDto>,
     videoSize?: number
   ) {
-    const isPhoto = !hasExtension(firstPost?.media?.[0]?.path, 'mp4');
+    const isPhoto = !hasVideoExtension(firstPost?.media?.[0]?.path);
 
     // TikTok photo posts only support PULL_FROM_URL, there is no FILE_UPLOAD
     // path for photos, so this branch keeps pulling from the URL.
@@ -810,7 +810,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
     integration: Integration
   ): Promise<PostResponse[]> {
     const [firstPost] = postDetails;
-    const isPhoto = !hasExtension(firstPost?.media?.[0]?.path, 'mp4');
+    const isPhoto = !hasVideoExtension(firstPost?.media?.[0]?.path);
     const videoPath = firstPost?.media?.[0]?.path!;
 
     // For videos we only need the total size up front (HEAD / statSync) so we

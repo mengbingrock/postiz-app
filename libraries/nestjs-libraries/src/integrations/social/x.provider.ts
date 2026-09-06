@@ -27,7 +27,7 @@ import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validatio
 import { stripLinks as removeLinks } from '@gitroom/helpers/utils/strip.links';
 import { XDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/x.dto';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 // Travels through the workflow history between postPending, checkPostStatus
 // and finalizePost - keep it small JSON (media ids and the tweet content).
@@ -125,7 +125,7 @@ export class XProvider extends SocialAbstract implements SocialProvider {
 
     if (
       [...(firstPost || []), ...comments.flat()].some((m) =>
-        hasExtension(m.path, 'mp4')
+        hasVideoExtension(m.path)
       )
     ) {
       return 'X articles only support images';
@@ -653,7 +653,7 @@ export class XProvider extends SocialAbstract implements SocialProvider {
       for (const m of p?.media || []) {
         const uploaded = await this.runInConcurrent(
           async () =>
-            hasExtension(m.path, 'mp4')
+            hasVideoExtension(m.path)
               ? this.uploadWithRateLimitRetry(() =>
                   this.uploadVideoInChunks(client, m.path)
                 )

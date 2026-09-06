@@ -17,6 +17,7 @@ import * as process from 'node:process';
 import dayjs from 'dayjs';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 import { GmbSettingsDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/gmb.settings.dto';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 const clientAndGmb = () => {
   const client = new google.auth.OAuth2({
@@ -438,7 +439,10 @@ export class GmbProvider extends SocialAbstract implements SocialProvider {
       const mediaItem = firstPost.media[0];
       postBody.media = [
         {
-          mediaFormat: mediaItem.type === 'video' ? 'VIDEO' : 'PHOTO',
+          mediaFormat:
+            mediaItem.type === 'video' || hasVideoExtension(mediaItem.path)
+              ? 'VIDEO'
+              : 'PHOTO',
           sourceUrl: mediaItem.path,
         },
       ];

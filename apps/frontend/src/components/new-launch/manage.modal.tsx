@@ -43,6 +43,7 @@ import { useHasScroll } from '@gitroom/frontend/components/ui/is.scroll.hook';
 import { useShortlinkPreference } from '@gitroom/frontend/components/settings/shortlink-preference.component';
 import dayjs from 'dayjs';
 import { Button } from '@gitroom/react/form/button';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 export const ManageModal: FC<AddEditModalProps> = (props) => {
   const t = useT();
@@ -409,7 +410,7 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
                   content: item.content,
                   media: item.image.map((media: any) => ({
                     path: media.path,
-                    type: /\.mp4(?:$|\?)/i.test(media.path || '')
+                    type: hasVideoExtension(media.path)
                       ? 'video'
                       : 'image',
                   })),

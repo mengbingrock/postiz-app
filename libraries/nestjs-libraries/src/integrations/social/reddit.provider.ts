@@ -18,7 +18,7 @@ import { lookup } from 'mime-types';
 import FormDataUpload from 'form-data';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
 import { Integration } from '@prisma/client';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 // Travels through the workflow history between postPending, checkPostStatus
 // and finalizePost. The cursor makes every subreddit submit its own
@@ -470,7 +470,7 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
     const value = entry.value;
     const kind =
       value.type === 'media'
-        ? hasExtension(data.mediaPath || '', 'mp4')
+        ? hasVideoExtension(data.mediaPath || '')
           ? 'video'
           : 'image'
         : value.type;
@@ -491,7 +491,7 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
       ...(value.type === 'media'
         ? {
             url: await this.uploadFileToReddit(accessToken, data.mediaPath!),
-            ...(hasExtension(data.mediaPath || '', 'mp4')
+            ...(hasVideoExtension(data.mediaPath || '')
               ? {
                   video_poster_url: await this.uploadFileToReddit(
                     accessToken,

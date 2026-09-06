@@ -20,7 +20,7 @@ import {
 import dayjs from 'dayjs';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 // Travels through the workflow history between postPending, checkPostStatus
 // and finalizePost - keep it small JSON (the media id and the pin content).
@@ -276,10 +276,10 @@ export class PinterestProvider
   ): Promise<PostResponse[]> {
     let mediaId = '';
     const findMp4 = postDetails?.[0]?.media?.find((p) =>
-      hasExtension(p.path, 'mp4')
+      hasVideoExtension(p.path)
     );
     const picture = postDetails?.[0]?.media?.find(
-      (p) => !hasExtension(p.path, 'mp4')
+      (p) => !hasVideoExtension(p.path)
     );
 
     // Upload the video now; the processing wait moves to checkPostStatus and

@@ -14,7 +14,7 @@ import { TumblrDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settin
 import { Integration } from '@prisma/client';
 import FormDataUpload from 'form-data';
 import { lookup } from 'mime-types';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 const TUMBLR_API_URL = 'https://api.tumblr.com/v2';
 const TUMBLR_USER_AGENT = 'Postiz/1.0 (+https://postiz.com)';
@@ -432,7 +432,7 @@ export class TumblrProvider extends SocialAbstract implements SocialProvider {
   }
 
   private isVideoPath(path?: string | null) {
-    return hasExtension(path, 'mp4');
+    return hasVideoExtension(path);
   }
 
   private async getVideoDimensions(
