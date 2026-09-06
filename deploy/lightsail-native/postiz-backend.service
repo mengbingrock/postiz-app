@@ -1,8 +1,8 @@
 [Unit]
 Description=Postiz backend
-After=network-online.target postgresql.service redis-server.service temporal.service
+After=network-online.target postgresql.service redis-server.service temporal.service postiz-xvfb.service
 Wants=network-online.target
-Requires=postgresql.service redis-server.service temporal.service
+Requires=postgresql.service redis-server.service temporal.service postiz-xvfb.service
 
 [Service]
 Type=simple
@@ -10,6 +10,7 @@ User=ubuntu
 WorkingDirectory=/opt/postiz/app
 Environment=NODE_ENV=production
 Environment=PATH=/opt/node-v22.20.0/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DISPLAY=:99
 ExecStart=/usr/local/bin/pnpm start:prod:backend
 Restart=always
 RestartSec=5

@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -14,6 +16,22 @@ import { InstagramDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-set
 import { InstagramProvider } from '@gitroom/nestjs-libraries/integrations/social/instagram.provider';
 import { Integration } from '@prisma/client';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const instagramOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['INSTAGRAM_APP_ID'],
+  clientSecretEnv: ['INSTAGRAM_APP_SECRET'],
+  clientIdLabel: 'Instagram App ID',
+  clientSecretLabel: 'Instagram App Secret',
+  developerPortalUrl: 'https://developers.facebook.com/apps/creation/',
+  documentationUrl:
+    'https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/',
+  help: [
+    'Add the Manage messaging & content on Instagram use case and choose API setup with Instagram login.',
+    'Add the required content permissions and configure Instagram Business Login.',
+    'Add the Instagram account as a tester while the app is unpublished.',
+  ],
+};
 
 const instagramProvider = new InstagramProvider();
 
@@ -26,6 +44,8 @@ export class InstagramStandaloneProvider
 {
   identifier = 'instagram-standalone';
   name = 'Instagram\n(Standalone)';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = instagramOAuthCredentialSetup;
   isBetweenSteps = false;
   refreshCron = true;
   scopes = [
@@ -34,7 +54,7 @@ export class InstagramStandaloneProvider
     'instagram_business_manage_comments',
     'instagram_business_manage_insights',
   ];
-    override maxConcurrentJob = 200; // Instagram standalone has stricter limits
+  override maxConcurrentJob = 200; // Instagram standalone has stricter limits
   dto = InstagramDto;
 
   editor = 'normal' as const;
@@ -101,12 +121,16 @@ export class InstagramStandaloneProvider
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
+    const credentials = resolveOAuthCredentials(
+      instagramOAuthCredentialSetup,
+      clientInformation
+    );
     return {
       url:
         `https://www.instagram.com/oauth/authorize?enable_fb_login=0&client_id=${
-          process.env.INSTAGRAM_APP_ID
+          credentials.client_id
         }&redirect_uri=${encodeURIComponent(
           `${
             process?.env.FRONTEND_URL?.indexOf('https') == -1
@@ -121,14 +145,21 @@ export class InstagramStandaloneProvider
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      instagramOAuthCredentialSetup,
+      clientInformation
+    );
     const formData = new FormData();
-    formData.append('client_id', process.env.INSTAGRAM_APP_ID!);
-    formData.append('client_secret', process.env.INSTAGRAM_APP_SECRET!);
+    formData.append('client_id', credentials.client_id);
+    formData.append('client_secret', credentials.client_secret);
     formData.append('grant_type', 'authorization_code');
     formData.append(
       'redirect_uri',
@@ -151,8 +182,8 @@ export class InstagramStandaloneProvider
       await fetch(
         'https://graph.instagram.com/access_token' +
           '?grant_type=ig_exchange_token' +
-          `&client_id=${process.env.INSTAGRAM_APP_ID}` +
-          `&client_secret=${process.env.INSTAGRAM_APP_SECRET}` +
+          `&client_id=${encodeURIComponent(credentials.client_id)}` +
+          `&client_secret=${encodeURIComponent(credentials.client_secret)}` +
           `&access_token=${getAccessToken.access_token}`
       )
     ).json();
@@ -224,7 +255,11 @@ export class InstagramStandaloneProvider
     pendingData: any,
     integration: Integration
   ) {
-    return instagramProvider.finalizePost(accessToken, pendingData, integration);
+    return instagramProvider.finalizePost(
+      accessToken,
+      pendingData,
+      integration
+    );
   }
 
   async comment(

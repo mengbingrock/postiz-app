@@ -14,6 +14,9 @@ dist
 /apps/commands/dist
 .devcontainer
 **/.git
+.env
+.env.*
+!.env.example
 **/*.md
 **/LICENSE
 **/npm-debug.log

@@ -14,9 +14,8 @@ import React, {
 import { Button } from '@gitroom/react/form/button';
 import useSWR from 'swr';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 import { Media } from '@prisma/client';
-import { useMediaDirectory } from '@gitroom/react/helpers/use.media.directory';
 import { useSettings } from '@gitroom/frontend/components/launches/helpers/use.values';
 import EventEmitter from 'events';
 import { useToaster } from '@gitroom/react/toaster/toaster';
@@ -57,6 +56,15 @@ const Polonto = dynamic(
   () => import('@gitroom/frontend/components/launches/polonto')
 );
 const showModalEmitter = new EventEmitter();
+type MediaSelection = {
+  id: string;
+  path: string;
+  thumbnail?: string;
+};
+const mediaContentUrl = (id: string) =>
+  `/api/media/${encodeURIComponent(id)}/content`;
+const mediaPreviewUrl = (id: string) =>
+  `/api/media/${encodeURIComponent(id)}/preview`;
 export const Pagination: FC<{
   current: number;
   totalPages: number;
@@ -172,7 +180,7 @@ export const Pagination: FC<{
 export const ShowMediaBoxModal: FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [callBack, setCallBack] =
-    useState<(params: { id: string; path: string }[]) => void | undefined>();
+    useState<(params: MediaSelection[]) => void | undefined>();
   const closeModal = useCallback(() => {
     setShowModal(false);
     setCallBack(undefined);
@@ -193,15 +201,13 @@ export const ShowMediaBoxModal: FC = () => {
     </div>
   );
 };
-export const showMediaBox = (
-  callback: (params: { id: string; path: string }) => void
-) => {
+export const showMediaBox = (callback: (params: MediaSelection) => void) => {
   showModalEmitter.emit('show-modal', callback);
 };
 const CHUNK_SIZE = 1024 * 1024;
 const MAX_UPLOAD_SIZE = 1024 * 1024 * 1024; // 1 GB
 export const MediaBox: FC<{
-  setMedia: (params: { id: string; path: string }[]) => void;
+  setMedia: (params: MediaSelection[]) => void;
   standalone?: boolean;
   type?: 'image' | 'video';
   closeModal: () => void;
@@ -229,7 +235,6 @@ export const MediaBox: FC<{
   const [selected, setSelected] = useState([]);
   const t = useT();
   const uploaderRef = useRef<any>(null);
-  const mediaDirectory = useMediaDirectory();
   const [loading, setLoading] = useState(false);
 
   const uppy = useUppyUploader({
@@ -237,8 +242,8 @@ export const MediaBox: FC<{
       type == 'image'
         ? 'image/*'
         : type == 'video'
-        ? 'video/mp4'
-        : 'image/*,video/mp4',
+        ? 'video/*'
+        : 'image/*,video/*',
     onUploadSuccess: async (arr) => {
       await mutate();
       if (standalone) {
@@ -352,17 +357,18 @@ export const MediaBox: FC<{
         top: 10,
         children: (
           <div className="w-full h-full p-[50px]">
-            {hasExtension(media.path, 'mp4') ? (
+            {hasVideoExtension(media.path) ? (
               <VideoFrame
                 autoplay={true}
-                url={mediaDirectory.set(media.path)}
+                url={mediaContentUrl(media.id)}
+                poster={media.thumbnail ? mediaPreviewUrl(media.id) : undefined}
               />
             ) : (
               <img
                 width="100%"
                 height="100%"
                 className="w-full h-full max-h-[100%] max-w-[100%] object-cover"
-                src={mediaDirectory.set(media.path)}
+                src={mediaContentUrl(media.id)}
                 alt="media"
               />
             )}
@@ -408,21 +414,24 @@ export const MediaBox: FC<{
         ) : (
           <PlusIcon size={14} />
         )}
-        <div className={loading ? 'invisible' : undefined}>{t('upload', 'Upload')}</div>
+        <div className={loading ? 'invisible' : undefined}>
+          {t('upload', 'Upload')}
+        </div>
       </button>
     );
   }, [t, loading]);
 
   return (
-    <DropFiles disabled={loading} className="flex flex-col flex-1" onDrop={dragAndDrop}>
+    <DropFiles
+      disabled={loading}
+      className="flex flex-col flex-1"
+      onDrop={dragAndDrop}
+    >
       <div className="flex flex-col flex-1">
         <div
           className={clsx(
             'flex items-center gap-[12px]',
-            !isLoading &&
-              !data?.results?.length &&
-              !debouncedSearch &&
-              'hidden'
+            !isLoading && !data?.results?.length && !debouncedSearch && 'hidden'
           )}
         >
           <div className="flex-1">
@@ -483,10 +492,7 @@ export const MediaBox: FC<{
                 <NoMediaIcon />
                 <div className="text-[20px] font-[600]">
                   {debouncedSearch
-                    ? t(
-                        'no_media_match_search',
-                        'No media matches your search'
-                      )
+                    ? t('no_media_match_search', 'No media matches your search')
                     : t(
                         'you_dont_have_any_media_yet',
                         "You don't have any media yet"
@@ -526,9 +532,9 @@ export const MediaBox: FC<{
             {data?.results
               ?.filter((f: any) => {
                 if (type === 'video') {
-                  return hasExtension(f.path, 'mp4');
+                  return hasVideoExtension(f.path);
                 } else if (type === 'image') {
-                  return !hasExtension(f.path, 'mp4');
+                  return !hasVideoExtension(f.path);
                 }
                 return true;
               })
@@ -559,7 +565,9 @@ export const MediaBox: FC<{
                         onClick={deleteImage(media)}
                       />
                     )}
-                    <div className="absolute bottom-[10px] end-[10px] z-[100]">{media.originalName}</div>
+                    <div className="absolute bottom-[10px] end-[10px] z-[100]">
+                      {media.originalName}
+                    </div>
                     <div className="w-full h-full rounded-[6px] overflow-hidden relative">
                       <div className="absolute z-[20] left-[50%] top-[50%] -translate-x-[50%] -translate-y-[50%]">
                         <div
@@ -580,14 +588,21 @@ export const MediaBox: FC<{
                           </svg>
                         </div>
                       </div>
-                      {hasExtension(media.path, 'mp4') ? (
-                        <VideoFrame url={mediaDirectory.set(media.path)} />
+                      {hasVideoExtension(media.path) ? (
+                        <VideoFrame
+                          url={mediaContentUrl(media.id)}
+                          poster={
+                            media.thumbnail
+                              ? mediaPreviewUrl(media.id)
+                              : undefined
+                          }
+                        />
                       ) : (
                         <img
                           width="100%"
                           height="100%"
                           className="w-full h-full object-cover"
-                          src={mediaDirectory.set(media.path)}
+                          src={mediaContentUrl(media.id)}
                           alt="media"
                         />
                       )}
@@ -638,12 +653,10 @@ export const MultiMediaComponent: FC<{
     image?: Array<{
       id: string;
       path: string;
+      thumbnail?: string;
     }>;
   }[];
-  value?: Array<{
-    path: string;
-    id: string;
-  }>;
+  value?: MediaSelection[];
   text: string;
   name: string;
   error?: any;
@@ -686,19 +699,8 @@ export const MultiMediaComponent: FC<{
   }, [value]);
 
   const [currentMedia, setCurrentMedia] = useState(value);
-  const mediaDirectory = useMediaDirectory();
   const changeMedia = useCallback(
-    (
-      m:
-        | {
-            path: string;
-            id: string;
-          }
-        | {
-            path: string;
-            id: string;
-          }[]
-    ) => {
+    (m: MediaSelection | MediaSelection[]) => {
       const mediaArray = Array.isArray(m) ? m : [m];
       const newMedia = [...(currentMedia || []), ...mediaArray];
       setCurrentMedia(newMedia);
@@ -768,57 +770,67 @@ export const MultiMediaComponent: FC<{
               handle=".dragging"
             >
               {currentMedia.map((media, index) => (
-                  <div key={media.id} className="cursor-pointer rounded-[5px] w-[40px] h-[40px] border-2 border-tableBorder relative flex transition-all">
-                    <DragHandleIcon className="z-[20] dragging absolute pe-[1px] pb-[3px] -start-[4px] -top-[4px] cursor-move" />
+                <div
+                  key={media.id}
+                  className="cursor-pointer rounded-[5px] w-[40px] h-[40px] border-2 border-tableBorder relative flex transition-all"
+                >
+                  <DragHandleIcon className="z-[20] dragging absolute pe-[1px] pb-[3px] -start-[4px] -top-[4px] cursor-move" />
 
-                    <div className="w-full h-full relative group">
-                      <div
-                        onClick={async () => {
-                          modals.openModal({
-                            title: t('media_settings', 'Media Settings'),
-                            children: (close) => (
-                              <MediaComponentInner
-                                media={media as any}
-                                onClose={close}
-                                onSelect={(value: any) => {
-                                  onChange({
-                                    target: {
-                                      name: 'upload',
-                                      value: currentMedia.map((p) => {
-                                        if (p.id === media.id) {
-                                          return {
-                                            ...p,
-                                            ...value,
-                                          };
-                                        }
-                                        return p;
-                                      }),
-                                    },
-                                  });
-                                }}
-                              />
-                            ),
-                          });
-                        }}
-                        className="absolute top-[50%] left-[50%] -translate-x-[50%] -translate-y-[50%] bg-black/80 rounded-[10px] opacity-0 group-hover:opacity-100 transition-opacity z-[9]"
-                      >
-                        <MediaSettingsIcon className="cursor-pointer relative z-[200]" />
-                      </div>
-                      {hasExtension(media?.path, 'mp4') ? (
-                        <VideoFrame url={mediaDirectory.set(media?.path)} />
-                      ) : (
-                        <img
-                          className="w-full h-full object-cover rounded-[4px]"
-                          src={mediaDirectory.set(media?.path)}
-                        />
-                      )}
+                  <div className="w-full h-full relative group">
+                    <div
+                      onClick={async () => {
+                        modals.openModal({
+                          title: t('media_settings', 'Media Settings'),
+                          children: (close) => (
+                            <MediaComponentInner
+                              media={media as any}
+                              onClose={close}
+                              onSelect={(value: any) => {
+                                onChange({
+                                  target: {
+                                    name: 'upload',
+                                    value: currentMedia.map((p) => {
+                                      if (p.id === media.id) {
+                                        return {
+                                          ...p,
+                                          ...value,
+                                        };
+                                      }
+                                      return p;
+                                    }),
+                                  },
+                                });
+                              }}
+                            />
+                          ),
+                        });
+                      }}
+                      className="absolute top-[50%] left-[50%] -translate-x-[50%] -translate-y-[50%] bg-black/80 rounded-[10px] opacity-0 group-hover:opacity-100 transition-opacity z-[9]"
+                    >
+                      <MediaSettingsIcon className="cursor-pointer relative z-[200]" />
                     </div>
-
-                    <CloseCircleIcon
-                      onClick={clearMedia(index)}
-                      className="absolute -end-[4px] -top-[4px] z-[20] rounded-full bg-white"
-                    />
+                    {hasVideoExtension(media?.path) ? (
+                      <VideoFrame
+                        url={mediaContentUrl(media.id)}
+                        poster={
+                          media?.thumbnail
+                            ? mediaPreviewUrl(media.id)
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      <img
+                        className="w-full h-full object-cover rounded-[4px]"
+                        src={mediaContentUrl(media.id)}
+                      />
+                    )}
                   </div>
+
+                  <CloseCircleIcon
+                    onClick={clearMedia(index)}
+                    className="absolute -end-[4px] -top-[4px] z-[20] rounded-full bg-white"
+                  />
+                </div>
               ))}
             </ReactSortable>
           )}
@@ -919,8 +931,6 @@ export const MediaComponent: FC<{
   }, []);
   const [currentMedia, setCurrentMedia] = useState(value);
   const modals = useModals();
-  const mediaDirectory = useMediaDirectory();
-
   const showDesignModal = useCallback(() => {
     modals.openModal({
       title: t('media_editor', 'Media Editor'),
@@ -978,8 +988,8 @@ export const MediaComponent: FC<{
         <div className="my-[20px] cursor-pointer w-[200px] h-[200px] border-2 border-tableBorder">
           <img
             className="w-full h-full object-cover"
-            src={currentMedia.path}
-            onClick={() => window.open(mediaDirectory.set(currentMedia.path))}
+            src={mediaContentUrl(currentMedia.id)}
+            onClick={() => window.open(mediaContentUrl(currentMedia.id))}
           />
         </div>
       )}

@@ -49,7 +49,9 @@ export type RedNoteBinaryPaths = {
 
 const installing = new Map<string, Promise<RedNoteBinaryPaths>>();
 const PROFILE_ID_PATTERN = /^[a-f0-9]{24}$/;
-const PROFILE_PORT_FILE = 'mcp-port';
+const MCP_PROFILE_PORT_FILE = 'mcp-port';
+const CHINESEINLA_CDP_PORT_FILE = 'chineseinla-cdp-port';
+const PROFILE_PORT_FILES = [MCP_PROFILE_PORT_FILE, CHINESEINLA_CDP_PORT_FILE];
 const DEFAULT_PROFILE_PORT_MIN = 20_000;
 const DEFAULT_PROFILE_PORT_MAX = 59_999;
 let allocatingProfilePort: Promise<unknown> = Promise.resolve();
@@ -164,10 +166,13 @@ const readProfilePort = async (path: string) => {
   }
 };
 
-const allocateRedNoteProfileEndpoint = async (profileId: string) => {
+const allocateRedNoteProfilePort = async (
+  profileId: string,
+  portFile: string
+) => {
   const paths = redNoteBinaryPaths(undefined, profileId);
   const profileDirectory = paths.profileDirectory!;
-  const portPath = join(profileDirectory, PROFILE_PORT_FILE);
+  const portPath = join(profileDirectory, portFile);
   const { minimum, maximum } = configuredProfilePortRange();
   const existingPort = await readProfilePort(portPath);
   if (
@@ -175,7 +180,7 @@ const allocateRedNoteProfileEndpoint = async (profileId: string) => {
     existingPort >= minimum &&
     existingPort <= maximum
   ) {
-    return `http://127.0.0.1:${existingPort}/mcp`;
+    return existingPort;
   }
 
   const profilesDirectory = dirname(profileDirectory);
@@ -185,19 +190,24 @@ const allocateRedNoteProfileEndpoint = async (profileId: string) => {
   await Promise.all(
     profiles
       .filter((profile) => profile.isDirectory())
-      .map(async (profile) => {
-        const port = await readProfilePort(
-          join(profilesDirectory, profile.name, PROFILE_PORT_FILE)
-        );
-        if (port !== undefined) {
-          assignedPorts.add(port);
-        }
-      })
+      .flatMap((profile) =>
+        PROFILE_PORT_FILES.map(async (assignedPortFile) => {
+          const port = await readProfilePort(
+            join(profilesDirectory, profile.name, assignedPortFile)
+          );
+          if (port !== undefined) {
+            assignedPorts.add(port);
+          }
+        })
+      )
   );
 
   const portCount = maximum - minimum + 1;
   const preferredOffset =
-    createHash('sha256').update(profileId).digest().readUInt32BE(0) % portCount;
+    createHash('sha256')
+      .update(`${profileId}\0${portFile}`)
+      .digest()
+      .readUInt32BE(0) % portCount;
   let selectedPort: number | undefined;
   for (let offset = 0; offset < portCount; offset += 1) {
     const candidate = minimum + ((preferredOffset + offset) % portCount);
@@ -212,18 +222,43 @@ const allocateRedNoteProfileEndpoint = async (profileId: string) => {
 
   await mkdir(profileDirectory, { recursive: true, mode: 0o700 });
   await writeFile(portPath, `${selectedPort}\n`, { mode: 0o600 });
-  return `http://127.0.0.1:${selectedPort}/mcp`;
+  return selectedPort;
 };
 
-export const redNoteProfileEndpoint = async (profileId: string) => {
+const withProfilePortAllocation = async <T>(callback: () => Promise<T>) => {
+  const allocation = allocatingProfilePort.then(callback);
+  allocatingProfilePort = allocation.catch(() => undefined);
+  return allocation;
+};
+
+const validateProfileId = (profileId: string) => {
   if (!PROFILE_ID_PATTERN.test(profileId)) {
     throw new Error('Invalid RedNote profile identifier.');
   }
-  const allocation = allocatingProfilePort.then(() =>
-    allocateRedNoteProfileEndpoint(profileId)
+};
+
+export const redNoteProfileEndpoint = async (profileId: string) => {
+  validateProfileId(profileId);
+  const port = await withProfilePortAllocation(() =>
+    allocateRedNoteProfilePort(profileId, MCP_PROFILE_PORT_FILE)
   );
-  allocatingProfilePort = allocation.catch(() => undefined);
-  return allocation;
+  return `http://127.0.0.1:${port}/mcp`;
+};
+
+export const redNoteChineseInLAProfilePaths = async (profileId: string) => {
+  validateProfileId(profileId);
+  const paths = redNoteBinaryPaths(undefined, profileId);
+  const root = join(paths.profileDirectory!, 'chineseinla');
+  const cdpPort = await withProfilePortAllocation(() =>
+    allocateRedNoteProfilePort(profileId, CHINESEINLA_CDP_PORT_FILE)
+  );
+  return {
+    cdpPort,
+    cookiePath: join(root, 'cookies.json'),
+    previewPath: join(root, 'prepared-preview.png'),
+    profileDirectory: join(root, 'profile'),
+    statePath: join(root, 'prepared.json'),
+  };
 };
 
 const exists = async (path: string) => {

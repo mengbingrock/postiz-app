@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -18,6 +20,20 @@ import { Integration } from '@prisma/client';
 import { number, string } from 'yup';
 import FormDataUpload from 'form-data';
 import { PassThrough, Readable } from 'stream';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const mastodonOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['MASTODON_CLIENT_ID'],
+  clientSecretEnv: ['MASTODON_CLIENT_SECRET'],
+  clientIdLabel: 'Mastodon Client ID',
+  clientSecretLabel: 'Mastodon Client Secret',
+  developerPortalUrl: 'https://mastodon.social/settings/applications',
+  documentationUrl: 'https://docs.joinmastodon.org/client/token/',
+  help: [
+    'Create a new application on mastodon.social under Preferences > Development.',
+    'Grant read and write access, then copy the Client key and Client secret.',
+  ],
+};
 
 // Travels through the workflow history between postPending, checkPostStatus
 // and finalizePost - keep it small JSON (the instance url, media ids and the
@@ -34,6 +50,8 @@ export class MastodonProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 5; // Mastodon instances typically have generous limits
   identifier = 'mastodon';
   name = 'Mastodon';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = mastodonOAuthCredentialSetup;
   isBetweenSteps = false;
   scopes = ['write:statuses', 'profile', 'write:media'];
   editor = 'normal' as const;
@@ -95,12 +113,16 @@ export class MastodonProvider extends SocialAbstract implements SocialProvider {
     )}&scope=${this.scopes.join('+')}&state=${state}`;
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
+    const credentials = resolveOAuthCredentials(
+      mastodonOAuthCredentialSetup,
+      clientInformation
+    );
     const url = this.generateUrlDynamic(
       process.env.MASTODON_URL || 'https://mastodon.social',
       state,
-      process.env.MASTODON_CLIENT_ID!,
+      credentials.client_id,
       process.env.FRONTEND_URL!
     );
     return {
@@ -153,14 +175,21 @@ export class MastodonProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      mastodonOAuthCredentialSetup,
+      clientInformation
+    );
     return this.dynamicAuthenticate(
-      process.env.MASTODON_CLIENT_ID!,
-      process.env.MASTODON_CLIENT_SECRET!,
+      credentials.client_id,
+      credentials.client_secret,
       process.env.MASTODON_URL || 'https://mastodon.social',
       params.code
     );

@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -10,11 +12,27 @@ import dayjs from 'dayjs';
 import { Integration } from '@prisma/client';
 import { SlackDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/slack.dto';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const slackOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['SLACK_ID'],
+  clientSecretEnv: ['SLACK_SECRET'],
+  clientIdLabel: 'Slack Client ID',
+  clientSecretLabel: 'Slack Client Secret',
+  developerPortalUrl: 'https://api.slack.com/apps',
+  documentationUrl: 'https://api.slack.com/authentication/oauth-v2',
+  help: [
+    'Create a Slack app from scratch and add the Bot Token scopes shown below.',
+    'Add the Postiz callback URL under OAuth & Permissions → Redirect URLs.',
+  ],
+};
 
 export class SlackProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 3; // Slack has moderate API limits
   identifier = 'slack';
   name = 'Slack';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = slackOAuthCredentialSetup;
   isBetweenSteps = false;
   editor = 'normal' as const;
   scopes = [
@@ -42,12 +60,16 @@ export class SlackProvider extends SocialAbstract implements SocialProvider {
       username: '',
     };
   }
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
+    const credentials = resolveOAuthCredentials(
+      slackOAuthCredentialSetup,
+      clientInformation
+    );
 
     return {
       url: `https://slack.com/oauth/v2/authorize?client_id=${
-        process.env.SLACK_ID
+        credentials.client_id
       }&redirect_uri=${encodeURIComponent(
         `${
           process?.env?.FRONTEND_URL?.indexOf('https') === -1
@@ -60,11 +82,18 @@ export class SlackProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      slackOAuthCredentialSetup,
+      clientInformation
+    );
     const { access_token, team, bot_user_id, scope } = await (
       await this.fetch(`https://slack.com/api/oauth.v2.access`, {
         method: 'POST',
@@ -72,8 +101,8 @@ export class SlackProvider extends SocialAbstract implements SocialProvider {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-          client_id: process.env.SLACK_ID!,
-          client_secret: process.env.SLACK_SECRET!,
+          client_id: credentials.client_id,
+          client_secret: credentials.client_secret,
           code: params.code,
           redirect_uri: `${
             process?.env?.FRONTEND_URL?.indexOf('https') === -1

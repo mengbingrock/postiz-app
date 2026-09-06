@@ -1,6 +1,8 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -15,11 +17,27 @@ import { DribbbleDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-sett
 import mime from 'mime-types';
 import { DiscordDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/discord.dto';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const dribbbleOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['DRIBBBLE_CLIENT_ID'],
+  clientSecretEnv: ['DRIBBBLE_CLIENT_SECRET'],
+  clientIdLabel: 'Dribbble Client ID',
+  clientSecretLabel: 'Dribbble Client Secret',
+  developerPortalUrl: 'https://dribbble.com/account/applications/new',
+  documentationUrl: 'https://developer.dribbble.com/v2/oauth/',
+  help: [
+    'Create a Dribbble application and copy its Client ID and Client Secret.',
+    'Request upload access if the app does not already have it.',
+  ],
+};
 
 export class DribbbleProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 3; // Dribbble has moderate API limits
   identifier = 'dribbble';
   name = 'Dribbble';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = dribbbleOAuthCredentialSetup;
   isBetweenSteps = false;
   scopes = ['public', 'upload'];
   editor = 'normal' as const;
@@ -108,11 +126,15 @@ export class DribbbleProvider extends SocialAbstract implements SocialProvider {
     );
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
+    const credentials = resolveOAuthCredentials(
+      dribbbleOAuthCredentialSetup,
+      clientInformation
+    );
     return {
       url: `https://dribbble.com/oauth/authorize?client_id=${
-        process.env.DRIBBBLE_CLIENT_ID
+        credentials.client_id
       }&redirect_uri=${encodeURIComponent(
         `${process.env.FRONTEND_URL}/integrations/social/dribbble`
       )}&response_type=code&scope=${this.scopes.join('+')}&state=${state}`,
@@ -121,14 +143,29 @@ export class DribbbleProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      dribbbleOAuthCredentialSetup,
+      clientInformation
+    );
     const { access_token, scope } = await (
       await this.fetch(
-        `https://dribbble.com/oauth/token?client_id=${process.env.DRIBBBLE_CLIENT_ID}&client_secret=${process.env.DRIBBBLE_CLIENT_SECRET}&code=${params.code}&redirect_uri=${process.env.FRONTEND_URL}/integrations/social/dribbble`,
+        `https://dribbble.com/oauth/token?client_id=${encodeURIComponent(
+          credentials.client_id
+        )}&client_secret=${encodeURIComponent(
+          credentials.client_secret
+        )}&code=${encodeURIComponent(
+          params.code
+        )}&redirect_uri=${encodeURIComponent(
+          `${process.env.FRONTEND_URL}/integrations/social/dribbble`
+        )}`,
         {
           method: 'POST',
         }

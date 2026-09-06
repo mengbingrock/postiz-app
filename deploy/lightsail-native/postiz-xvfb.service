@@ -1,0 +1,14 @@
+[Unit]
+Description=Virtual display for Postiz interactive browser logins
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/usr/bin/Xvfb :99 -screen 0 1280x900x24 -nolisten tcp -ac
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

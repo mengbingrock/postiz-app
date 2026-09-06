@@ -8,6 +8,7 @@ import {
   headerName,
   languages,
 } from '@gitroom/react/translation/i18n.config';
+import { isPostizBackendProxyPath } from '../mcp-proxy-routes.js';
 acceptLanguage.languages(languages);
 
 // This function can be marked `async` if using `await` inside
@@ -44,6 +45,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (
+    isPostizBackendProxyPath(nextUrl.pathname) ||
     nextUrl.pathname.startsWith('/uploads/') ||
     nextUrl.pathname.startsWith('/p/') ||
     nextUrl.pathname.startsWith('/provider/') ||

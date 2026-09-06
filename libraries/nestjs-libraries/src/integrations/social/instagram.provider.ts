@@ -1,6 +1,8 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -19,6 +21,22 @@ import { Integration } from '@prisma/client';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
 import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const instagramFacebookOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['FACEBOOK_APP_ID'],
+  clientSecretEnv: ['FACEBOOK_APP_SECRET'],
+  clientIdLabel: 'Meta App ID',
+  clientSecretLabel: 'Meta App Secret',
+  developerPortalUrl: 'https://developers.facebook.com/apps/creation/',
+  documentationUrl:
+    'https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/',
+  help: [
+    'Add the Manage messaging & content on Instagram use case to the Meta app.',
+    'Open API setup with Facebook login and add the required content, comments, and insights permissions.',
+    'Enable Client OAuth Login and Web OAuth Login in Facebook Login for Business settings.',
+  ],
+};
 
 @Rules(
   "Instagram should have at least one attachment, if it's a story, it can have only one picture"
@@ -29,6 +47,8 @@ export class InstagramProvider
 {
   identifier = 'instagram';
   name = 'Instagram\n(Facebook Business)';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = instagramFacebookOAuthCredentialSetup;
   isBetweenSteps = true;
   toolTip = 'Instagram must be business and connected to a Facebook page';
   scopes = [
@@ -355,7 +375,7 @@ export class InstagramProvider
       return {
         type: 'retry' as const,
         value: 'Could not upload your media',
-      }
+      };
     }
 
     if (body.indexOf('2207077') > -1) {
@@ -368,8 +388,9 @@ export class InstagramProvider
     if (body.indexOf('too little or too many attachments') > -1) {
       return {
         type: 'bad-body' as const,
-        value: 'Instagram carousel should have between 2 and 10 media attachments',
-      }
+        value:
+          'Instagram carousel should have between 2 and 10 media attachments',
+      };
     }
 
     if (body.indexOf('2207027') > -1) {
@@ -413,12 +434,16 @@ export class InstagramProvider
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
+    const credentials = resolveOAuthCredentials(
+      instagramFacebookOAuthCredentialSetup,
+      clientInformation
+    );
     return {
       url:
         'https://www.facebook.com/v20.0/dialog/oauth' +
-        `?client_id=${process.env.FACEBOOK_APP_ID}` +
+        `?client_id=${encodeURIComponent(credentials.client_id)}` +
         `&redirect_uri=${encodeURIComponent(
           `${process.env.FRONTEND_URL}/integrations/social/instagram`
         )}` +
@@ -429,21 +454,28 @@ export class InstagramProvider
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      instagramFacebookOAuthCredentialSetup,
+      clientInformation
+    );
     const getAccessToken = await (
       await fetch(
         'https://graph.facebook.com/v20.0/oauth/access_token' +
-          `?client_id=${process.env.FACEBOOK_APP_ID}` +
+          `?client_id=${encodeURIComponent(credentials.client_id)}` +
           `&redirect_uri=${encodeURIComponent(
             `${process.env.FRONTEND_URL}/integrations/social/instagram${
               params.refresh ? `?refresh=${params.refresh}` : ''
             }`
           )}` +
-          `&client_secret=${process.env.FACEBOOK_APP_SECRET}` +
+          `&client_secret=${encodeURIComponent(credentials.client_secret)}` +
           `&code=${params.code}`
       )
     ).json();
@@ -452,8 +484,8 @@ export class InstagramProvider
       await fetch(
         'https://graph.facebook.com/v20.0/oauth/access_token' +
           '?grant_type=fb_exchange_token' +
-          `&client_id=${process.env.FACEBOOK_APP_ID}` +
-          `&client_secret=${process.env.FACEBOOK_APP_SECRET}` +
+          `&client_id=${encodeURIComponent(credentials.client_id)}` +
+          `&client_secret=${encodeURIComponent(credentials.client_secret)}` +
           `&fb_exchange_token=${getAccessToken.access_token}`
       )
     ).json();
@@ -884,7 +916,9 @@ export class InstagramProvider
       // re-running this is safe)
       const { id: containerId } = await (
         await this.fetch(
-          `https://${pendingData.type}/v20.0/${igId}/media?caption=${encodeURIComponent(
+          `https://${
+            pendingData.type
+          }/v20.0/${igId}/media?caption=${encodeURIComponent(
             pendingData.message || ''
           )}&media_type=CAROUSEL&children=${encodeURIComponent(
             pendingData.containers.join(',')

@@ -2,11 +2,23 @@ import { PrismaRepository } from '@gitroom/nestjs-libraries/database/prisma/pris
 import { Injectable } from '@nestjs/common';
 import { SaveMediaInformationDto } from '@gitroom/nestjs-libraries/dtos/media/save.media.information.dto';
 
+export type SaveMediaOptions = {
+  thumbnail?: string;
+  type?: 'image' | 'video';
+  fileSize?: number;
+};
+
 @Injectable()
 export class MediaRepository {
   constructor(private _media: PrismaRepository<'media'>) {}
 
-  saveFile(org: string, fileName: string, filePath: string, originalName?: string) {
+  saveFile(
+    org: string,
+    fileName: string,
+    filePath: string,
+    originalName?: string,
+    options?: SaveMediaOptions
+  ) {
     return this._media.model.media.create({
       data: {
         organization: {
@@ -17,6 +29,9 @@ export class MediaRepository {
         name: fileName,
         path: filePath,
         originalName: originalName || null,
+        thumbnail: options?.thumbnail,
+        type: options?.type,
+        fileSize: options?.fileSize,
       },
       select: {
         id: true,
@@ -25,6 +40,8 @@ export class MediaRepository {
         path: true,
         thumbnail: true,
         alt: true,
+        type: true,
+        fileSize: true,
       },
     });
   }
@@ -33,6 +50,16 @@ export class MediaRepository {
     return this._media.model.media.findUnique({
       where: {
         id,
+      },
+    });
+  }
+
+  getMediaByIdForOrg(org: string, id: string) {
+    return this._media.model.media.findFirst({
+      where: {
+        id,
+        organizationId: org,
+        deletedAt: null,
       },
     });
   }
@@ -68,6 +95,8 @@ export class MediaRepository {
         thumbnail: true,
         path: true,
         thumbnailTimestamp: true,
+        type: true,
+        fileSize: true,
       },
     });
   }
@@ -110,6 +139,8 @@ export class MediaRepository {
         thumbnail: true,
         alt: true,
         thumbnailTimestamp: true,
+        type: true,
+        fileSize: true,
       },
       skip: pageNum * 18,
       take: 18,

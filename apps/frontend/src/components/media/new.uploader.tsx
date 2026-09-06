@@ -18,7 +18,8 @@ export class CompressionWrapper<M = any, B = any> extends Compressor<any, any> {
   override async prepareUpload(fileIDs: string[]) {
     const { files } = this.uppy.getState();
 
-    // 1) Skip GIFs (and anything missing)
+    // Only images can be compressed. Passing video files to the compressor can
+    // make an otherwise valid video upload fail before it reaches storage.
     const filteredIDs = fileIDs.filter((id) => {
       const f = files[id];
       if (!f) return false;
@@ -27,7 +28,7 @@ export class CompressionWrapper<M = any, B = any> extends Compressor<any, any> {
       const name = (f.name ?? '').toLowerCase();
       const isGif = type === 'image/gif' || name.endsWith('.gif');
 
-      return !isGif;
+      return type.startsWith('image/') && !isGif;
     });
 
     // 2) Let @uppy/compressor do its work (convert/resize/etc)
@@ -64,7 +65,7 @@ export function useUppyUploader(props: {
     // check for valid file types it can be something like this image/*,video/mp4.
     // If it's an image, I need to replace image/* with image/png, image/jpeg, image/jpeg, image/gif (separately)
     uppy2.addPreProcessor((fileIDs) => {
-      return new Promise<void>((resolve, reject) => {
+      return new Promise<void>((resolve) => {
         const files = uppy2.getFiles();
         const allowedTypes = allowedFileTypes
           .split(',')
@@ -90,6 +91,7 @@ export function useUppyUploader(props: {
           return [type];
         });
 
+        let rejectedFiles = 0;
         for (const file of files) {
           if (fileIDs.includes(file.id)) {
             const fileType = file.type;
@@ -114,9 +116,15 @@ export function useUppyUploader(props: {
                 'warning'
               );
               uppy2.removeFile(file.id);
-              return reject(error);
+              rejectedFiles++;
             }
           }
+        }
+
+        if (rejectedFiles === fileIDs.length) {
+          setLocked(false);
+          props.onEnd();
+          fileOrderIndex = 0;
         }
 
         resolve();

@@ -41,12 +41,21 @@ import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integration
 import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
 import {
+  RedditAgentBrowserInput,
+  RedditAgentProvider,
+} from '@gitroom/nestjs-libraries/integrations/social/reddit.agent.provider';
+import {
+  hasServerOAuthCredentials,
+  missingOAuthCredentialNames,
+} from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+import {
   existingTokenProbeProviders,
   hasLiveChannelProbe,
   metaChannelAccessToken,
   metaProbeProviders,
   refreshProbeProviders,
 } from '@gitroom/backend/api/routes/channel.check.helpers';
+import { EgressRelayService } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 
 type ChannelCheckStatus =
   | 'working'
@@ -74,7 +83,8 @@ export class IntegrationsController {
     private _integrationManager: IntegrationManager,
     private _integrationService: IntegrationService,
     private _postService: PostsService,
-    private _refreshIntegrationService: RefreshIntegrationService
+    private _refreshIntegrationService: RefreshIntegrationService,
+    private _egressRelayService: EgressRelayService
   ) {}
 
   private redNoteProvider() {
@@ -87,6 +97,12 @@ export class IntegrationsController {
     return this._integrationManager.getSocialIntegration(
       'chineseinla'
     ) as ChineseInLAProvider;
+  }
+
+  private redditAgentProvider() {
+    return this._integrationManager.getSocialIntegration(
+      'reddit-agent'
+    ) as RedditAgentProvider;
   }
 
   private channelCheckResult(
@@ -312,10 +328,177 @@ export class IntegrationsController {
     }
   }
 
+  @Post('/reddit-agent/login/start')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async startRedditAgentLogin(
+    @GetOrgFromRequest() org: Organization,
+    @Body()
+    body: {
+      username?: string;
+      password?: string;
+      profileName?: string;
+      method?: 'password' | 'google' | 'apple' | 'phone' | 'email_link' | 'sso';
+    }
+  ) {
+    try {
+      return await this.redditAgentProvider().startInteractiveLogin(
+        org.id,
+        body
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'Unable to start Reddit browser login.'
+      );
+    } finally {
+      body.password = '';
+    }
+  }
+
+  @Get('/reddit-agent/login/status')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async getRedditAgentLoginStatus(@GetOrgFromRequest() org: Organization) {
+    return await this.redditAgentProvider().getInteractiveLoginStatus(org.id);
+  }
+
+  @Get('/reddit-agent/login/viewer/:viewerId')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  getRedditAgentLoginViewer(
+    @GetOrgFromRequest() org: Organization,
+    @Param('viewerId') viewerId: string
+  ) {
+    try {
+      return this.redditAgentProvider().getInteractiveLoginViewer(
+        org.id,
+        viewerId
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'The Reddit login viewer is unavailable.'
+      );
+    }
+  }
+
+  @Get('/reddit-agent/login/viewer/:viewerId/frame')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  getRedditAgentLoginFrame(
+    @GetOrgFromRequest() org: Organization,
+    @Param('viewerId') viewerId: string
+  ) {
+    try {
+      return this.redditAgentProvider().getInteractiveLoginFrame(
+        org.id,
+        viewerId
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'The Reddit login browser is unavailable.'
+      );
+    }
+  }
+
+  @Post('/reddit-agent/login/viewer/:viewerId/input')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async sendRedditAgentLoginInput(
+    @GetOrgFromRequest() org: Organization,
+    @Param('viewerId') viewerId: string,
+    @Body() input: RedditAgentBrowserInput
+  ) {
+    try {
+      return await this.redditAgentProvider().sendInteractiveLoginInput(
+        org.id,
+        viewerId,
+        input
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'The Reddit login browser rejected the input.'
+      );
+    }
+  }
+
+  @Post('/reddit-agent/login/cancel')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async cancelRedditAgentLogin(@GetOrgFromRequest() org: Organization) {
+    return await this.redditAgentProvider().cancelInteractiveLogin(org.id);
+  }
+
+  @Post('/reddit-agent/login/otp')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async submitRedditAgentLoginCode(
+    @GetOrgFromRequest() org: Organization,
+    @Body() body: { code?: string }
+  ) {
+    try {
+      return await this.redditAgentProvider().submitInteractiveLoginCode(
+        org.id,
+        typeof body.code === 'string' ? body.code.trim() : ''
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'Unable to submit the Reddit verification code.'
+      );
+    } finally {
+      body.code = '';
+    }
+  }
+
+  @Get('/chineseinla/egress/status')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  chineseInLAEgressStatus(@GetOrgFromRequest() org: Organization) {
+    return this._egressRelayService.status(org.id);
+  }
+
+  @Post('/chineseinla/egress/ensure')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async ensureChineseInLAEgress(
+    @GetOrgFromRequest() org: Organization,
+    @Body() body: { deviceId?: string }
+  ) {
+    try {
+      return await this._egressRelayService.ensureChineseInLALease(
+        org.id,
+        typeof body.deviceId === 'string' && body.deviceId.trim()
+          ? body.deviceId.trim()
+          : undefined,
+        10
+      );
+    } catch (error) {
+      throw new BadRequestException({
+        code: 'CHINESEINLA_PROXY_UNAVAILABLE',
+        retryable: true,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The local ChineseInLA egress connection is unavailable.',
+      });
+    }
+  }
+
   @Post('/chineseinla/login')
   @Header('Cache-Control', 'no-store, private')
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   async loginChineseInLA(
+    @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User,
     @Body()
     body: {
       username?: string;
@@ -323,6 +506,7 @@ export class IntegrationsController {
       binaryPath?: string;
       mcpEndpoint?: string;
       profileName?: string;
+      deviceId?: string;
     }
   ) {
     const username =
@@ -340,7 +524,15 @@ export class IntegrationsController {
     }
 
     try {
+      await this._egressRelayService.ensureChineseInLALease(
+        org.id,
+        typeof body.deviceId === 'string' && body.deviceId.trim()
+          ? body.deviceId.trim()
+          : undefined,
+        10
+      );
       return await this.chineseInLAProvider().loginWithPassword(
+        `${org.id}\0${user.id}`,
         {
           binaryPath: body.binaryPath,
           mcpEndpoint: body.mcpEndpoint,
@@ -774,6 +966,19 @@ export class IntegrationsController {
 
       const clientInformation = customOAuthCredentials || getExternalUrl;
 
+      if (
+        integrationProvider.oauthCredentialSetup &&
+        !clientInformation &&
+        !hasServerOAuthCredentials(integrationProvider.oauthCredentialSetup)
+      ) {
+        return {
+          requiresOAuthCredentials: true,
+          missing: missingOAuthCredentialNames(
+            integrationProvider.oauthCredentialSetup
+          ),
+        };
+      }
+
       const { codeVerifier, state, url } =
         await integrationProvider.generateAuthUrl(clientInformation);
 
@@ -837,7 +1042,10 @@ export class IntegrationsController {
 
     const integrationProvider =
       this._integrationManager.getSocialIntegration(integration);
-    if (!integrationProvider.customOAuthCredentials) {
+    if (
+      !integrationProvider.customOAuthCredentials ||
+      !integrationProvider.oauthCredentialSetup
+    ) {
       throw new BadRequestException(
         'This integration does not support custom OAuth credentials'
       );
@@ -845,7 +1053,7 @@ export class IntegrationsController {
 
     const clientId = body.clientId?.trim() || '';
     const clientSecret = body.clientSecret?.trim() || '';
-    if (!/^[A-Za-z0-9._-]{5,128}$/.test(clientId)) {
+    if (!/^\S{3,512}$/.test(clientId)) {
       throw new BadRequestException('Enter a valid OAuth Client ID');
     }
     if (!/^\S{8,512}$/.test(clientSecret)) {

@@ -1,6 +1,8 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -17,13 +19,32 @@ import * as process from 'node:process';
 import dayjs from 'dayjs';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 import { GmbSettingsDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/gmb.settings.dto';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
 import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
-const clientAndGmb = () => {
+const gmbOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['GOOGLE_GMB_CLIENT_ID', 'YOUTUBE_CLIENT_ID'],
+  clientSecretEnv: ['GOOGLE_GMB_CLIENT_SECRET', 'YOUTUBE_CLIENT_SECRET'],
+  clientIdLabel: 'Google OAuth Client ID',
+  clientSecretLabel: 'Google OAuth Client Secret',
+  developerPortalUrl: 'https://console.cloud.google.com/apis/credentials',
+  documentationUrl:
+    'https://developers.google.com/my-business/content/implement-oauth',
+  help: [
+    'Request and enable access to the Google Business Profile APIs for your Cloud project.',
+    'Configure the OAuth consent screen and add your Google account as a test user while the app is in testing.',
+    'Create a Web application OAuth client.',
+  ],
+};
+
+const clientAndGmb = (clientInformation?: ClientInformation) => {
+  const credentials = resolveOAuthCredentials(
+    gmbOAuthCredentialSetup,
+    clientInformation
+  );
   const client = new google.auth.OAuth2({
-    clientId: process.env.GOOGLE_GMB_CLIENT_ID || process.env.YOUTUBE_CLIENT_ID,
-    clientSecret:
-      process.env.GOOGLE_GMB_CLIENT_SECRET || process.env.YOUTUBE_CLIENT_SECRET,
+    clientId: credentials.client_id,
+    clientSecret: credentials.client_secret,
     redirectUri: `${process.env.FRONTEND_URL}/integrations/social/gmb`,
   });
 
@@ -43,6 +64,8 @@ export class GmbProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 3;
   identifier = 'gmb';
   name = 'Google My Business';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = gmbOAuthCredentialSetup;
   isBetweenSteps = true;
   scopes = [
     'https://www.googleapis.com/auth/userinfo.profile',
@@ -134,8 +157,11 @@ export class GmbProvider extends SocialAbstract implements SocialProvider {
     return undefined;
   }
 
-  async refreshToken(refresh_token: string): Promise<AuthTokenDetails> {
-    const { client, oauth2 } = clientAndGmb();
+  async refreshToken(
+    refresh_token: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const { client, oauth2 } = clientAndGmb(clientInformation);
     client.setCredentials({ refresh_token });
     const { credentials } = await client.refreshAccessToken();
     const user = oauth2(client);
@@ -157,9 +183,9 @@ export class GmbProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(7);
-    const { client } = clientAndGmb();
+    const { client } = clientAndGmb(clientInformation);
     return {
       url: client.generateAuthUrl({
         access_type: 'offline',
@@ -173,12 +199,15 @@ export class GmbProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
-    const { client, oauth2 } = clientAndGmb();
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const { client, oauth2 } = clientAndGmb(clientInformation);
     const { tokens } = await client.getToken(params.code);
     client.setCredentials(tokens);
     const { scopes } = await client.getTokenInfo(tokens.access_token!);
@@ -213,7 +242,9 @@ export class GmbProvider extends SocialAbstract implements SocialProvider {
       if (accountsPageToken) {
         params.set('pageToken', accountsPageToken);
       }
-      const url = `https://mybusinessaccountmanagement.googleapis.com/v1/accounts${params.toString() ? `?${params}` : ''}`;
+      const url = `https://mybusinessaccountmanagement.googleapis.com/v1/accounts${
+        params.toString() ? `?${params}` : ''
+      }`;
 
       const accountsResponse = await fetch(url, {
         headers: {

@@ -1,6 +1,8 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -22,11 +24,36 @@ import dayjs from 'dayjs';
 import { createReadStream, statSync } from 'fs';
 import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+import {
+  hasExtension,
+  hasVideoExtension,
+} from '@gitroom/helpers/utils/has.extension';
+import { resolve, sep } from 'node:path';
 
-const clientAndYoutube = () => {
+export const youtubeOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['YOUTUBE_CLIENT_ID'],
+  clientSecretEnv: ['YOUTUBE_CLIENT_SECRET'],
+  clientIdLabel: 'Google OAuth Client ID',
+  clientSecretLabel: 'Google OAuth Client Secret',
+  developerPortalUrl: 'https://console.cloud.google.com/apis/credentials',
+  documentationUrl:
+    'https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps',
+  help: [
+    'Enable YouTube Data API v3 and YouTube Analytics API for the Google Cloud project.',
+    'Configure the OAuth consent screen and add your Google account as a test user while the app is in testing.',
+    'Create a Web application OAuth client.',
+  ],
+};
+
+const clientAndYoutube = (clientInformation?: ClientInformation) => {
+  const credentials = resolveOAuthCredentials(
+    youtubeOAuthCredentialSetup,
+    clientInformation
+  );
   const client = new google.auth.OAuth2({
-    clientId: process.env.YOUTUBE_CLIENT_ID,
-    clientSecret: process.env.YOUTUBE_CLIENT_SECRET,
+    clientId: credentials.client_id,
+    clientSecret: credentials.client_secret,
     redirectUri: `${process.env.FRONTEND_URL}/integrations/social/youtube`,
   });
 
@@ -56,6 +83,8 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 200; // YouTube has strict upload quotas
   identifier = 'youtube';
   name = 'YouTube';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = youtubeOAuthCredentialSetup;
   isBetweenSteps = true;
   dto = YoutubeSettingsDto;
   scopes = [
@@ -81,7 +110,7 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
     if (items?.[0]?.length !== 1) {
       return 'You need one media';
     }
-    if ((firstItems?.[0]?.path?.indexOf?.('mp4') ?? -1) === -1) {
+    if (!hasVideoExtension(firstItems?.[0]?.path)) {
       return 'Item must be a video';
     }
     return true;
@@ -257,8 +286,11 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
     return undefined;
   }
 
-  async refreshToken(refresh_token: string): Promise<AuthTokenDetails> {
-    const { client, oauth2 } = clientAndYoutube();
+  async refreshToken(
+    refresh_token: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const { client, oauth2 } = clientAndYoutube(clientInformation);
     client.setCredentials({ refresh_token });
     const { credentials } = await client.refreshAccessToken();
     const user = oauth2(client);
@@ -280,9 +312,9 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(7);
-    const { client } = clientAndYoutube();
+    const { client } = clientAndYoutube(clientInformation);
     return {
       url: client.generateAuthUrl({
         access_type: 'offline',
@@ -296,12 +328,15 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
-    const { client, oauth2 } = clientAndYoutube();
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const { client, oauth2 } = clientAndYoutube(clientInformation);
     const { tokens } = await client.getToken(params.code);
     client.setCredentials(tokens);
     const { scopes } = await client.getTokenInfo(tokens.access_token!);
@@ -423,6 +458,41 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
   // Keep each upload batch well below the 10-minute activity timeout, the
   // workflow calls finalizePost again for the remaining bytes.
   private static readonly YOUTUBE_UPLOAD_BATCH_MS = 4 * 60 * 1000;
+
+  private youtubeContentType(path: string) {
+    if (hasExtension(path, 'mov')) return 'video/quicktime';
+    if (hasExtension(path, 'mpeg') || hasExtension(path, 'mpg')) {
+      return 'video/mpeg';
+    }
+    return 'video/mp4';
+  }
+
+  private youtubeMediaPath(path: string) {
+    if (!/^https?:\/\//i.test(path)) return path;
+
+    try {
+      const url = new URL(path);
+      const frontendUrl = new URL(process.env.FRONTEND_URL!);
+      if (
+        url.origin !== frontendUrl.origin ||
+        !url.pathname.startsWith('/uploads/')
+      ) {
+        return path;
+      }
+
+      const base = resolve(process.env.UPLOAD_DIRECTORY!);
+      const localPath = resolve(
+        base,
+        decodeURIComponent(url.pathname.slice('/uploads/'.length))
+      );
+      if (localPath === base || !localPath.startsWith(base + sep)) {
+        return path;
+      }
+      return statSync(localPath).isFile() ? localPath : path;
+    } catch {
+      return path;
+    }
+  }
 
   // Resolves the total byte size of the media without loading it into memory:
   // a HEAD request for remote URLs, statSync for local files.
@@ -552,8 +622,9 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
     const [firstPost, ...comments] = postDetails;
 
     const { settings }: { settings: YoutubeSettingsDto } = firstPost;
-    const path = firstPost?.media?.[0]?.path!;
+    const path = this.youtubeMediaPath(firstPost?.media?.[0]?.path!);
     const videoSize = await this.youtubeMediaSize(path);
+    const contentType = this.youtubeContentType(path);
 
     // Start a resumable upload session: nothing exists on the channel until
     // the final byte is received, so nothing here is irreversible yet - the
@@ -565,7 +636,7 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json; charset=UTF-8',
-          'X-Upload-Content-Type': 'video/mp4',
+          'X-Upload-Content-Type': contentType,
           'X-Upload-Content-Length': String(videoSize),
         },
         body: JSON.stringify({
@@ -714,7 +785,7 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
             method: 'PUT',
             headers: {
               Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'video/mp4',
+              'Content-Type': this.youtubeContentType(pendingData.path),
               'Content-Length': String(end - uploaded + 1),
               'Content-Range': `bytes ${uploaded}-${end}/${pendingData.videoSize}`,
             },

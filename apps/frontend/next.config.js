@@ -1,5 +1,8 @@
 // @ts-check
 import { withSentryConfig } from '@sentry/nextjs';
+import { buildPostizBackendRewrites } from './mcp-proxy-routes.js';
+
+const usesLocalStorage = (process.env.STORAGE_PROVIDER || 'local') === 'local';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -38,11 +41,15 @@ const nextConfig = {
     return [
       {
         source: '/api/uploads/:path*',
-        destination:
-          process.env.STORAGE_PROVIDER === 'local' ? '/uploads/:path*' : '/404',
+        destination: usesLocalStorage ? '/uploads/:path*' : '/404',
         permanent: true,
       },
     ];
+  },
+  async rewrites() {
+    return buildPostizBackendRewrites(
+      process.env.BACKEND_INTERNAL_URL || 'http://127.0.0.1:3000'
+    );
   },
 };
 

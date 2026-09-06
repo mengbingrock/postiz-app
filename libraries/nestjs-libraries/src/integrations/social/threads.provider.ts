@@ -1,6 +1,8 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -18,10 +20,26 @@ import { Plug } from '@gitroom/helpers/decorators/plug.decorator';
 import { Integration } from '@prisma/client';
 import { stripHtmlValidation } from '@gitroom/helpers/utils/strip.html.validation';
 import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const threadsOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['THREADS_APP_ID'],
+  clientSecretEnv: ['THREADS_APP_SECRET'],
+  clientIdLabel: 'Threads App ID',
+  clientSecretLabel: 'Threads App Secret',
+  developerPortalUrl: 'https://developers.facebook.com/apps/creation/',
+  documentationUrl: 'https://developers.facebook.com/docs/threads/',
+  help: [
+    'Create a Meta app with the Threads API use case.',
+    'Configure Threads OAuth settings and add a tester while the app is unpublished.',
+  ],
+};
 
 export class ThreadsProvider extends SocialAbstract implements SocialProvider {
   identifier = 'threads';
   name = 'Threads';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = threadsOAuthCredentialSetup;
   isBetweenSteps = false;
   scopes = [
     'threads_basic',
@@ -60,8 +78,7 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
     if (body.includes('4279013')) {
       return {
         type: 'bad-body',
-        value:
-          'User restricted',
+        value: 'User restricted',
       };
     }
     if (body.includes('The media could not be fetched from this URI')) {
@@ -103,12 +120,16 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
+    const credentials = resolveOAuthCredentials(
+      threadsOAuthCredentialSetup,
+      clientInformation
+    );
     return {
       url:
         'https://www.threads.net/oauth/authorize' +
-        `?client_id=${process.env.THREADS_APP_ID}` +
+        `?client_id=${encodeURIComponent(credentials.client_id)}` +
         `&redirect_uri=${encodeURIComponent(
           `${
             process?.env.FRONTEND_URL?.indexOf('https') == -1
@@ -123,15 +144,22 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      threadsOAuthCredentialSetup,
+      clientInformation
+    );
     const getAccessToken = await (
       await this.fetch(
         'https://graph.threads.net/oauth/access_token' +
-          `?client_id=${process.env.THREADS_APP_ID}` +
+          `?client_id=${encodeURIComponent(credentials.client_id)}` +
           `&redirect_uri=${encodeURIComponent(
             `${
               process?.env.FRONTEND_URL?.indexOf('https') == -1
@@ -140,7 +168,7 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
             }/integrations/social/threads`
           )}` +
           `&grant_type=authorization_code` +
-          `&client_secret=${process.env.THREADS_APP_SECRET}` +
+          `&client_secret=${encodeURIComponent(credentials.client_secret)}` +
           `&code=${params.code}`
       )
     ).json();
@@ -149,7 +177,7 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
       await this.fetch(
         'https://graph.threads.net/access_token' +
           '?grant_type=th_exchange_token' +
-          `&client_secret=${process.env.THREADS_APP_SECRET}` +
+          `&client_secret=${encodeURIComponent(credentials.client_secret)}` +
           `&access_token=${getAccessToken.access_token}`
       )
     ).json();
@@ -570,7 +598,9 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
 
       const { id: containerId } = await (
         await this.fetch(
-          `https://graph.threads.net/v1.0/${integration.internalId}/threads?${params.toString()}`,
+          `https://graph.threads.net/v1.0/${
+            integration.internalId
+          }/threads?${params.toString()}`,
           {
             method: 'POST',
           }
@@ -595,7 +625,11 @@ export class ThreadsProvider extends SocialAbstract implements SocialProvider {
     return {
       status: 'completed',
       postId: threadId,
-      releaseURL: await this.threadPermalink(threadId, accessToken, integration),
+      releaseURL: await this.threadPermalink(
+        threadId,
+        accessToken,
+        integration
+      ),
     };
   }
 

@@ -24,6 +24,7 @@ import {
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.service';
 import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
+import { EgressRelayService } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -32,7 +33,8 @@ export class NoAuthIntegrationsController {
     private _integrationManager: IntegrationManager,
     private _integrationService: IntegrationService,
     private _refreshIntegrationService: RefreshIntegrationService,
-    private _organizationService: OrganizationService
+    private _organizationService: OrganizationService,
+    private _egressRelayService: EgressRelayService
   ) {}
 
   @Get('/')
@@ -118,14 +120,24 @@ export class NoAuthIntegrationsController {
       // eslint-disable-next-line no-async-promise-executor
     } = await new Promise<AuthTokenDetails>(async (res) => {
       try {
-        const auth = await integrationProvider.authenticate(
-          {
-            code: body.code,
-            codeVerifier: getCodeVerifier,
-            refresh: body.refresh,
-          },
-          details ? JSON.parse(details) : undefined
-        );
+        const authenticate = () =>
+          integrationProvider.authenticate(
+            {
+              code: body.code,
+              codeVerifier: getCodeVerifier,
+              refresh: body.refresh,
+            },
+            details ? JSON.parse(details) : undefined
+          );
+        const auth =
+          integration === 'chineseinla'
+            ? await this._egressRelayService.withChineseInLALease(
+                org.id,
+                authenticate,
+                undefined,
+                10
+              )
+            : await authenticate();
 
         if (typeof auth === 'string') {
           return res({
@@ -176,7 +188,10 @@ export class NoAuthIntegrationsController {
         }
 
         return res({
-          error: 'Authentication failed',
+          error:
+            integration === 'chineseinla' && err instanceof Error
+              ? err.message
+              : 'Authentication failed',
           accessToken: '',
           id: '',
           name: '',

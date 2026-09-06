@@ -1,6 +1,8 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -21,6 +23,20 @@ import { createReadStream } from 'fs';
 import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
 import { Integration } from '@prisma/client';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const tiktokOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['TIKTOK_CLIENT_ID'],
+  clientSecretEnv: ['TIKTOK_CLIENT_SECRET'],
+  clientIdLabel: 'TikTok Client Key',
+  clientSecretLabel: 'TikTok Client Secret',
+  developerPortalUrl: 'https://developers.tiktok.com/apps/',
+  documentationUrl: 'https://developers.tiktok.com/doc/login-kit-web/',
+  help: [
+    'Create a TikTok developer app and add Login Kit and Content Posting API.',
+    'Configure the app scopes shown below and add a sandbox user until the app is approved.',
+  ],
+};
 
 @Rules(
   [
@@ -33,6 +49,8 @@ import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorato
 export class TiktokProvider extends SocialAbstract implements SocialProvider {
   identifier = 'tiktok';
   name = 'Tiktok';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = tiktokOAuthCredentialSetup;
   isBetweenSteps = false;
   convertToJPEG = true;
   scopes = [
@@ -275,10 +293,17 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
     return undefined;
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthTokenDetails> {
+  async refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const credentials = resolveOAuthCredentials(
+      tiktokOAuthCredentialSetup,
+      clientInformation
+    );
     const value = {
-      client_key: process.env.TIKTOK_CLIENT_ID!,
-      client_secret: process.env.TIKTOK_CLIENT_SECRET!,
+      client_key: credentials.client_id,
+      client_secret: credentials.client_secret,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
     };
@@ -320,13 +345,17 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = Math.random().toString(36).substring(2);
+    const credentials = resolveOAuthCredentials(
+      tiktokOAuthCredentialSetup,
+      clientInformation
+    );
 
     return {
       url:
         'https://www.tiktok.com/v2/auth/authorize/' +
-        `?client_key=${process.env.TIKTOK_CLIENT_ID}` +
+        `?client_key=${encodeURIComponent(credentials.client_id)}` +
         `&redirect_uri=${encodeURIComponent(
           `${
             process?.env?.FRONTEND_URL?.indexOf('https') === -1
@@ -342,14 +371,21 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      tiktokOAuthCredentialSetup,
+      clientInformation
+    );
     const value = {
-      client_key: process.env.TIKTOK_CLIENT_ID!,
-      client_secret: process.env.TIKTOK_CLIENT_SECRET!,
+      client_key: credentials.client_id,
+      client_secret: credentials.client_secret,
       code: params.code,
       grant_type: 'authorization_code',
       code_verifier: params.codeVerifier,

@@ -27,6 +27,76 @@ import { useIntegrationList } from '@gitroom/frontend/components/launches/helper
 import useCookie from 'react-use-cookie';
 import { Onboarding } from '@gitroom/frontend/components/onboarding/onboarding';
 
+type ChannelCheckStatus =
+  | 'working'
+  | 'reconnect_required'
+  | 'failed'
+  | 'unverified'
+  | 'disabled';
+
+type ChannelCheckResult = {
+  id: string;
+  name: string;
+  identifier: string;
+  status: ChannelCheckStatus;
+  message: string;
+  verified: boolean;
+};
+
+const channelCheckAppearance: Record<
+  ChannelCheckStatus,
+  { label: string; dot: string; text: string }
+> = {
+  working: {
+    label: 'Working',
+    dot: 'bg-green-500',
+    text: 'text-green-500',
+  },
+  reconnect_required: {
+    label: 'Reconnect',
+    dot: 'bg-red-500',
+    text: 'text-red-500',
+  },
+  failed: {
+    label: 'Check failed',
+    dot: 'bg-red-500',
+    text: 'text-red-500',
+  },
+  unverified: {
+    label: 'Not live-verified',
+    dot: 'bg-yellow-500',
+    text: 'text-yellow-500',
+  },
+  disabled: {
+    label: 'Disabled',
+    dot: 'bg-gray-500',
+    text: 'text-gray-500',
+  },
+};
+
+const channelPlatformLabels: Record<string, string> = {
+  chineseinla: 'ChineseInLA',
+  facebook: 'Facebook Page',
+  gmb: 'Google Business Profile',
+  instagram: 'Instagram Business',
+  'instagram-standalone': 'Instagram',
+  linkedin: 'LinkedIn',
+  'linkedin-page': 'LinkedIn Page',
+  rednote: 'RedNote',
+  'reddit-agent': 'Reddit',
+  'tajima-website': 'Website',
+  youtube: 'YouTube',
+};
+
+const channelDisplayName = (identifier: string, accountName: string) =>
+  `${
+    channelPlatformLabels[identifier] ||
+    identifier
+      .split('-')
+      .map((part) => capitalize(part))
+      .join(' ')
+  } · ${accountName}`;
+
 export const SVGLine = () => {
   return (
     <svg
@@ -256,7 +326,10 @@ export const MenuComponent: FC<
       {...(collapsed
         ? {
             'data-tooltip-id': 'tooltip',
-            'data-tooltip-content': integration.name,
+            'data-tooltip-content': channelDisplayName(
+              integration.identifier,
+              integration.name
+            ),
           }
         : {})}
       className={clsx(
@@ -331,7 +404,7 @@ export const MenuComponent: FC<
           integration.disabled && 'opacity-50'
         )}
       >
-        {integration.name}
+        {channelDisplayName(integration.identifier, integration.name)}
       </div>
       <Menu
         canChangeProfilePicture={integration.changeProfilePicture}
@@ -362,6 +435,8 @@ export const LaunchesComponent = () => {
   const [collapseMenu, setCollapseMenu] = useCookie('collapseMenu', '0');
   const [mode] = useCookie('mode', 'dark');
   const { isLoading, data: integrations, mutate } = useIntegrationList();
+  const [checkingChannels, setCheckingChannels] = useState(false);
+  const [channelChecks, setChannelChecks] = useState<ChannelCheckResult[]>([]);
 
   const totalNonDisabledChannels = useMemo(() => {
     return (
@@ -369,6 +444,50 @@ export const LaunchesComponent = () => {
         ?.length || 0
     );
   }, [integrations]);
+  const checkAllChannels = useCallback(async () => {
+    if (checkingChannels || integrations.length === 0) {
+      return;
+    }
+    setCheckingChannels(true);
+    setChannelChecks([]);
+    try {
+      const response = await fetch('/integrations/check-all', {
+        method: 'POST',
+      });
+      const payload = await response.json();
+      if (!response.ok || !Array.isArray(payload?.results)) {
+        throw new Error(payload?.message || 'Unable to check channels');
+      }
+      const results = payload.results as ChannelCheckResult[];
+      setChannelChecks(results);
+      await mutate();
+      const issues = results.filter((result) =>
+        ['reconnect_required', 'failed'].includes(result.status)
+      ).length;
+      const unverified = results.filter(
+        (result) => result.status === 'unverified'
+      ).length;
+      toast.show(
+        issues
+          ? `${issues} channel${issues === 1 ? '' : 's'} need attention.`
+          : unverified
+          ? `Live checks passed; ${unverified} channel${
+              unverified === 1 ? '' : 's'
+            } could only be checked locally.`
+          : 'All connected channels are working.',
+        issues || unverified ? 'warning' : 'success'
+      );
+    } catch (error) {
+      toast.show(
+        error instanceof Error
+          ? error.message
+          : 'Unable to check connected channels.',
+        'warning'
+      );
+    } finally {
+      setCheckingChannels(false);
+    }
+  }, [checkingChannels, integrations, fetch, mutate, toast]);
   const changeItemGroup = useCallback(
     async (id: string, group: string) => {
       mutate(
@@ -537,6 +656,79 @@ export const LaunchesComponent = () => {
             </div>
             <div className="flex flex-col gap-[8px] group-[.sidebar]:mx-auto group-[.sidebar]:w-[44px]">
               <AddProviderButton update={() => update(true)} />
+              {sortedIntegrations.length > 0 && (
+                <button
+                  type="button"
+                  disabled={checkingChannels}
+                  onClick={checkAllChannels}
+                  data-tooltip-id="tooltip"
+                  data-tooltip-content={t(
+                    'check_all_channels_description',
+                    'Check connected channels, tokens, and browser cookies'
+                  )}
+                  className="h-[40px] w-full rounded-[6px] border border-fifth bg-newBgColorInner hover:bg-boxHover disabled:opacity-60 flex items-center justify-center gap-[8px] px-[10px] text-[13px] font-[500] transition-colors"
+                >
+                  {checkingChannels ? (
+                    <span className="h-[16px] w-[16px] rounded-full border-2 border-textColor border-t-transparent animate-spin" />
+                  ) : (
+                    <svg
+                      width="17"
+                      height="17"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M20 6 9 17l-5-5"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                  <span className="group-[.sidebar]:hidden">
+                    {checkingChannels
+                      ? t('checking_channels', 'Checking channels…')
+                      : t('check_all_channels', 'Check all channels')}
+                  </span>
+                </button>
+              )}
+              {channelChecks.length > 0 && (
+                <div className="group-[.sidebar]:hidden rounded-[6px] border border-fifth bg-newBgColor p-[8px] flex flex-col gap-[7px]">
+                  {channelChecks.map((result) => {
+                    const appearance = channelCheckAppearance[result.status];
+                    return (
+                      <div
+                        key={result.id}
+                        className="min-w-0"
+                        data-tooltip-id="tooltip"
+                        data-tooltip-content={result.message}
+                      >
+                        <div className="flex items-center gap-[7px] min-w-0">
+                          <span
+                            className={clsx(
+                              'h-[7px] w-[7px] rounded-full shrink-0',
+                              appearance.dot
+                            )}
+                          />
+                          <span className="text-[12px] truncate flex-1">
+                            {channelDisplayName(result.identifier, result.name)}
+                          </span>
+                          <span
+                            className={clsx(
+                              'text-[10px] shrink-0',
+                              appearance.text
+                            )}
+                          >
+                            {appearance.label}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               <div className="flex gap-[8px] group-[.sidebar]:flex-col">
                 {sortedIntegrations?.length > 0 && <NewPost />}
                 {sortedIntegrations?.length > 0 &&

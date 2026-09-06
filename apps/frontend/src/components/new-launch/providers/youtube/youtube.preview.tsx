@@ -57,7 +57,14 @@ export const YoutubePreview: FC<{
             imageClassName="w-full aspect-[calc(16/9)]"
             videoClassName="w-full aspect-[calc(16/9)] bg-black"
             autoplay={true}
-            src={mediaDir.set(renderContent?.[0]?.images?.[0]?.path || '')}
+            mediaPath={renderContent[0].images[0].path}
+            src={mediaDir.set(
+              renderContent[0].images[0].path,
+              renderContent[0].images[0].id
+            )}
+            poster={`/api/media/${encodeURIComponent(
+              renderContent[0].images[0].id
+            )}/preview`}
           />
         )}
       </div>

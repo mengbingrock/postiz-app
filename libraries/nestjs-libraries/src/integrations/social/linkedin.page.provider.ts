@@ -13,6 +13,8 @@ import { Integration } from '@prisma/client';
 import { Plug } from '@gitroom/helpers/decorators/plug.decorator';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+import { linkedinOAuthCredentialSetup } from '@gitroom/nestjs-libraries/integrations/social/linkedin.provider';
 
 @Rules(
   'LinkedIn can have maximum one attachment when selecting video, when choosing a carousel on LinkedIn minimum amount of attachment must be two, and only pictures, if uploading a video, LinkedIn can have only one attachment'
@@ -39,15 +41,13 @@ export class LinkedinPageProvider
   override editor = 'normal' as const;
 
   protected oauthCredentials(clientInformation?: ClientInformation) {
+    const credentials = resolveOAuthCredentials(
+      linkedinOAuthCredentialSetup,
+      clientInformation
+    );
     return {
-      clientId:
-        clientInformation?.client_id?.trim() ||
-        process.env.LINKEDIN_CLIENT_ID?.trim() ||
-        '',
-      clientSecret:
-        clientInformation?.client_secret?.trim() ||
-        process.env.LINKEDIN_CLIENT_SECRET?.trim() ||
-        '',
+      clientId: credentials.client_id,
+      clientSecret: credentials.client_secret,
     };
   }
 
@@ -117,7 +117,7 @@ export class LinkedinPageProvider
     integration: Integration,
     originalIntegration: Integration,
     postId: string,
-    information: any,
+    information: any
   ) {
     return super.addComment(
       integration,
@@ -492,7 +492,9 @@ export class LinkedinPageProvider
     // Fetch share statistics for the specific post
     const shareStatsUrl = `https://api.linkedin.com/v2/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(
       `urn:li:organization:${integrationId}`
-    )}&shares=List(${encodeURIComponent(postId)})&timeIntervals=(timeRange:(start:${startDate},end:${endDate}),timeGranularityType:DAY)`;
+    )}&shares=List(${encodeURIComponent(
+      postId
+    )})&timeIntervals=(timeRange:(start:${startDate},end:${endDate}),timeGranularityType:DAY)`;
 
     const { elements: shareElements }: { elements: PostShareStatElement[] } =
       await (

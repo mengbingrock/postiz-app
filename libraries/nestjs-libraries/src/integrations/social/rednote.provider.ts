@@ -26,8 +26,17 @@ import { Integration } from '@prisma/client';
 import {
   ensureRedNoteBinaries,
   redNoteBinaryPaths,
+  redNoteChineseInLAProfilePaths,
   redNoteProfileEndpoint,
 } from '@gitroom/nestjs-libraries/integrations/social/rednote.binary.installer';
+import {
+  fallbackRedNoteLoginAgentUi,
+  RedNoteLoginAgent,
+  RedNoteLoginAgentObservation,
+  RedNoteLoginAgentUi,
+  RedNoteLoginState,
+} from '@gitroom/nestjs-libraries/integrations/social/rednote.login.agent';
+import { redditAgentProfileRoot } from '@gitroom/nestjs-libraries/integrations/social/reddit.agent.profile';
 
 export type RedNoteCredentials = {
   binaryPath: string;
@@ -65,18 +74,6 @@ const SESSION_PREFLIGHT_TIMEOUT_MS = 45_000;
 const SESSION_EXPIRED_MESSAGE =
   'The RedNote session has expired. Reconnect the RedNote channel before publishing.';
 const startingServers = new Map<string, Promise<void>>();
-type RedNoteLoginState =
-  | 'waiting_for_scan'
-  | 'qr_scanned'
-  | 'otp_required'
-  | 'submitting_otp'
-  | 'otp_submitted'
-  | 'captcha_required'
-  | 'authenticated'
-  | 'failed'
-  | 'expired'
-  | 'cancelled';
-
 type InteractiveLogin = {
   status: 'idle' | 'running' | 'success' | 'error';
   message: string;
@@ -92,6 +89,10 @@ type InteractiveLogin = {
   hasCookieBackup?: boolean;
   statusCheck?: Promise<void>;
   otpSubmission?: Promise<void>;
+  agentUi?: RedNoteLoginAgentUi;
+  agentFingerprint?: string;
+  agentDecision?: Promise<void>;
+  agentAbort?: AbortController;
   cancelled?: boolean;
 };
 const interactiveLogins = new Map<string, InteractiveLogin>();
@@ -111,6 +112,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
   editor: 'none' | 'normal' | 'markdown' | 'html' = 'normal';
   dto: any = RedNoteDto;
   override maxConcurrentJob = 1;
+  private readonly loginAgent = new RedNoteLoginAgent();
 
   maxLength() {
     return 1000;
@@ -229,7 +231,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
   }
 
-  private encodeCredentials(credentials: RedNoteCredentials) {
+  protected encodeCredentials(credentials: RedNoteCredentials) {
     return Buffer.from(JSON.stringify(credentials), 'utf8').toString(
       'base64url'
     );
@@ -295,6 +297,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     if (previous?.status === 'running') {
       previous.status = 'error';
       previous.cancelled = true;
+      previous.agentAbort?.abort();
       previous.message =
         'This QR code was replaced by a newer RedNote login request.';
       previous.qrCode = undefined;
@@ -375,6 +378,12 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         hasCookieBackup,
       };
       interactiveLogins.set(key, state);
+      this.scheduleLoginAgent(state, {
+        loginState: 'waiting_for_scan',
+        hasQrCode: true,
+        otpAttempts: 0,
+        otpMaxAttempts: 3,
+      });
       return this.loginStatusResponse(state);
     } catch (error) {
       if (hasCookieBackup) {
@@ -406,7 +415,40 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         ? { otpMaxAttempts: state.otpMaxAttempts }
         : {}),
       otpRequired: state.loginState === 'otp_required',
+      ...(state.agentUi ? { agentUi: state.agentUi } : {}),
+      agentEnabled: this.loginAgent.isEnabled(),
     };
+  }
+
+  private scheduleLoginAgent(
+    state: InteractiveLogin,
+    observation: RedNoteLoginAgentObservation
+  ) {
+    const fingerprint = JSON.stringify(observation);
+    if (state.agentFingerprint === fingerprint) {
+      return;
+    }
+
+    state.agentFingerprint = fingerprint;
+    state.agentUi = fallbackRedNoteLoginAgentUi(observation);
+    state.agentAbort?.abort();
+    const controller = new AbortController();
+    state.agentAbort = controller;
+    let decision: Promise<void>;
+    decision = this.loginAgent
+      .decide(observation, controller.signal)
+      .then((ui) => {
+        if (state.agentFingerprint === fingerprint && !state.cancelled) {
+          state.agentUi = ui;
+        }
+      })
+      .finally(() => {
+        if (state.agentDecision === decision) {
+          state.agentDecision = undefined;
+          state.agentAbort = undefined;
+        }
+      });
+    state.agentDecision = decision;
   }
 
   private mcpImageDataUrl(image?: McpContent) {
@@ -489,6 +531,12 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         if (state.backupCookiePath) {
           await rm(state.backupCookiePath, { force: true });
         }
+        this.scheduleLoginAgent(state, {
+          loginState: session.loginState,
+          hasQrCode: false,
+          otpAttempts: session.otpAttempts,
+          otpMaxAttempts: session.otpMaxAttempts,
+        });
         return;
       }
 
@@ -499,14 +547,29 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         const challengeQrCode = this.mcpImageDataUrl(challengeImage);
         if (!challengeQrCode) {
           state.status = 'error';
+          state.loginState = 'failed';
           state.message =
             'Xiaohongshu requested a second security QR, but the installed MCP binary did not return its image. Update the binary and try again.';
           state.qrCode = undefined;
+          this.scheduleLoginAgent(state, {
+            loginState: 'failed',
+            hasQrCode: false,
+            otpAttempts: session.otpAttempts,
+            otpMaxAttempts: session.otpMaxAttempts,
+            lastError: state.message,
+          });
           return;
         }
         state.qrCode = challengeQrCode;
         state.message =
           'Scan this account-security QR with the already signed-in Xiaohongshu app, then approve the login. Postiz refreshed it in the same browser session.';
+        this.scheduleLoginAgent(state, {
+          loginState: session.loginState,
+          hasQrCode: true,
+          otpAttempts: session.otpAttempts,
+          otpMaxAttempts: session.otpMaxAttempts,
+          lastError: session.lastError,
+        });
         return;
       }
 
@@ -530,6 +593,13 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
           'This login session was replaced. Request a new QR code and try again.',
       };
       state.message = messages[session.loginState];
+      this.scheduleLoginAgent(state, {
+        loginState: session.loginState,
+        hasQrCode: Boolean(state.qrCode),
+        otpAttempts: session.otpAttempts,
+        otpMaxAttempts: session.otpMaxAttempts,
+        lastError: session.lastError,
+      });
 
       if (['failed', 'expired', 'cancelled'].includes(session.loginState)) {
         state.status = 'error';
@@ -556,9 +626,16 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
 
     if (state.expiresAt && Date.now() >= state.expiresAt) {
       state.status = 'error';
+      state.loginState = 'expired';
       state.message =
         'This QR code expired. Request a new one and scan it again.';
       state.qrCode = undefined;
+      this.scheduleLoginAgent(state, {
+        loginState: 'expired',
+        hasQrCode: false,
+        otpAttempts: state.otpAttempts || 0,
+        otpMaxAttempts: state.otpMaxAttempts || 3,
+      });
       if (state.hasCookieBackup && state.backupCookiePath && state.cookiePath) {
         await copyFile(state.backupCookiePath, state.cookiePath).catch(
           () => undefined
@@ -621,6 +698,12 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
 
     state.loginState = 'submitting_otp';
     state.message = 'Submitting the verification code securely…';
+    this.scheduleLoginAgent(state, {
+      loginState: 'submitting_otp',
+      hasQrCode: false,
+      otpAttempts: state.otpAttempts || 0,
+      otpMaxAttempts: state.otpMaxAttempts || 3,
+    });
     state.otpSubmission = this.callMcpTool(
       state.credentials,
       'submit_login_code',
@@ -631,6 +714,12 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         state.loginState = 'otp_submitted';
         state.message =
           'Verification code submitted. Waiting for Xiaohongshu to finish login…';
+        this.scheduleLoginAgent(state, {
+          loginState: 'otp_submitted',
+          hasQrCode: false,
+          otpAttempts: state.otpAttempts || 0,
+          otpMaxAttempts: state.otpMaxAttempts || 3,
+        });
       })
       .catch((error) => {
         state.loginState = 'otp_required';
@@ -638,6 +727,13 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
           error instanceof Error
             ? error.message
             : 'Unable to submit the verification code.';
+        this.scheduleLoginAgent(state, {
+          loginState: 'otp_required',
+          hasQrCode: false,
+          otpAttempts: state.otpAttempts || 0,
+          otpMaxAttempts: state.otpMaxAttempts || 3,
+          lastError: state.message,
+        });
         throw error;
       })
       .finally(() => {
@@ -833,16 +929,46 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     );
 
     const port = endpoint.port || '80';
-    const child = spawn(
-      paths.mcpPath,
-      ['-headless=true', '-port', `:${port}`],
-      {
-        cwd: paths.installDirectory,
-        detached: true,
-        stdio: 'ignore',
-        env: { ...process.env, COOKIES_PATH: paths.cookiePath },
+    const redditProfileRoot = redditAgentProfileRoot();
+    const childArgs = ['-headless=true', '-port', `:${port}`];
+    const chineseInLABrowserBin = process.env.CHINESEINLA_BROWSER_BIN?.trim();
+    if (credentials.profileId) {
+      const chineseInLAPaths = await redNoteChineseInLAProfilePaths(
+        credentials.profileId
+      );
+      childArgs.push(
+        `-chineseinla-cdp-port=${chineseInLAPaths.cdpPort}`,
+        `-chineseinla-profile-dir=${chineseInLAPaths.profileDirectory}`,
+        `-chineseinla-cookies-file=${chineseInLAPaths.cookiePath}`,
+        `-chineseinla-state-file=${chineseInLAPaths.statePath}`,
+        `-chineseinla-preview-image=${chineseInLAPaths.previewPath}`,
+        `-chineseinla-headless=${
+          process.env.CHINESEINLA_HEADLESS?.trim() || 'true'
+        }`
+      );
+    }
+    if (chineseInLABrowserBin) {
+      childArgs.push(`-chineseinla-browser-bin=${chineseInLABrowserBin}`);
+      if (!credentials.profileId) {
+        childArgs.push(
+          `-chineseinla-headless=${
+            process.env.CHINESEINLA_HEADLESS?.trim() || 'true'
+          }`
+        );
       }
-    );
+    }
+
+    const child = spawn(paths.mcpPath, childArgs, {
+      cwd: paths.installDirectory,
+      detached: true,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        COOKIES_PATH: paths.cookiePath,
+        REDDIT_PROFILE_ROOT: redditProfileRoot,
+        REDDIT_HEADLESS: process.env.REDDIT_HEADLESS || 'false',
+      },
+    });
     child.once('error', () => undefined);
     child.unref();
 
@@ -886,7 +1012,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return starting;
   }
 
-  protected async callMcpToolResult(
+  async callMcpToolResult(
     credentials: RedNoteCredentials,
     name: string,
     args: Record<string, unknown>,
@@ -931,7 +1057,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
   }
 
-  protected async callMcpTool(
+  async callMcpTool(
     credentials: RedNoteCredentials,
     name: string,
     args: Record<string, unknown>,
@@ -1087,7 +1213,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
   }
 
-  protected async localOrPublicMediaPath(value: string) {
+  async localOrPublicMediaPath(value: string) {
     if (isAbsolute(value)) {
       return value;
     }

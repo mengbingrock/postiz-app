@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -10,11 +12,28 @@ import { Integration } from '@prisma/client';
 import { DiscordDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/discord.dto';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
 import FormDataUpload from 'form-data';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const discordOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['DISCORD_CLIENT_ID'],
+  clientSecretEnv: ['DISCORD_CLIENT_SECRET'],
+  clientIdLabel: 'Discord Application ID',
+  clientSecretLabel: 'Discord Client Secret',
+  developerPortalUrl: 'https://discord.com/developers/applications',
+  documentationUrl: 'https://discord.com/developers/docs/topics/oauth2',
+  help: [
+    'Create a Discord application, add a bot, and copy the Application ID and Client Secret.',
+    'Add the callback URL below under OAuth2 Redirects.',
+    'The Postiz server must also have DISCORD_BOT_TOKEN_ID set to the application bot token for channel listing and publishing.',
+  ],
+};
 
 export class DiscordProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 5; // Discord has generous rate limits for webhook posting
   identifier = 'discord';
   name = 'Discord';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = discordOAuthCredentialSetup;
   isBetweenSteps = false;
   editor = 'markdown' as const;
   scopes = ['identify', 'guilds'];
@@ -23,7 +42,14 @@ export class DiscordProvider extends SocialAbstract implements SocialProvider {
   }
   dto = DiscordDto;
 
-  async refreshToken(refreshToken: string): Promise<AuthTokenDetails> {
+  async refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const credentials = resolveOAuthCredentials(
+      discordOAuthCredentialSetup,
+      clientInformation
+    );
     const { access_token, expires_in, refresh_token } = await (
       await this.fetch('https://discord.com/api/oauth2/token', {
         method: 'POST',
@@ -34,9 +60,7 @@ export class DiscordProvider extends SocialAbstract implements SocialProvider {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Authorization: `Basic ${Buffer.from(
-            process.env.DISCORD_CLIENT_ID +
-              ':' +
-              process.env.DISCORD_CLIENT_SECRET
+            credentials.client_id + ':' + credentials.client_secret
           ).toString('base64')}`,
         },
       })
@@ -60,11 +84,15 @@ export class DiscordProvider extends SocialAbstract implements SocialProvider {
       username: '',
     };
   }
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
+    const credentials = resolveOAuthCredentials(
+      discordOAuthCredentialSetup,
+      clientInformation
+    );
     return {
       url: `https://discord.com/oauth2/authorize?client_id=${
-        process.env.DISCORD_CLIENT_ID
+        credentials.client_id
       }&permissions=377957124096&response_type=code&redirect_uri=${encodeURIComponent(
         `${process.env.FRONTEND_URL}/integrations/social/discord`
       )}&integration_type=0&scope=bot+identify+guilds&state=${state}`,
@@ -73,11 +101,18 @@ export class DiscordProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      discordOAuthCredentialSetup,
+      clientInformation
+    );
     const { access_token, expires_in, refresh_token, scope, guild } = await (
       await this.fetch('https://discord.com/api/oauth2/token', {
         method: 'POST',
@@ -89,9 +124,7 @@ export class DiscordProvider extends SocialAbstract implements SocialProvider {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Authorization: `Basic ${Buffer.from(
-            process.env.DISCORD_CLIENT_ID +
-              ':' +
-              process.env.DISCORD_CLIENT_SECRET
+            credentials.client_id + ':' + credentials.client_secret
           ).toString('base64')}`,
         },
       })

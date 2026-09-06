@@ -52,6 +52,8 @@ const PUBLIC_API_ALLOWED_MIME = new Set<string>([
   'image/bmp',
   'image/tiff',
   'video/mp4',
+  'video/mpeg',
+  'video/quicktime',
 ]);
 import * as Sentry from '@sentry/nestjs';
 import {
@@ -66,6 +68,7 @@ import { UsersService } from '@gitroom/nestjs-libraries/database/prisma/users/us
 import { SuperAdminGuard } from '@gitroom/backend/services/auth/super.admin.guard';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { ioRedis } from '@gitroom/nestjs-libraries/redis/redis.service';
+import { createAndUploadVideoThumbnail } from '@gitroom/nestjs-libraries/upload/video.thumbnail';
 
 @ApiTags('Public API')
 @Controller('/public/v1')
@@ -95,10 +98,17 @@ export class PublicIntegrationsController {
     }
 
     const getFile = await this.storage.uploadFile(file);
+    const thumbnail = await createAndUploadVideoThumbnail(this.storage, file);
     return this._mediaService.saveFile(
       org.id,
       getFile.originalname,
-      getFile.path
+      getFile.path,
+      file.originalname,
+      {
+        thumbnail,
+        type: file.mimetype.startsWith('video/') ? 'video' : 'image',
+        fileSize: file.size,
+      }
     );
   }
 
@@ -146,23 +156,34 @@ export class PublicIntegrationsController {
     const mimetype = detected.mime;
     const ext = detected.ext;
 
-    const getFile = await this.storage.uploadFile({
+    const uploadedFile = {
       buffer,
       mimetype,
       size: buffer.length,
       path: '',
       fieldname: '',
       destination: '',
-      stream: new Readable(),
-      filename: '',
+      stream: Readable.from(buffer),
+      filename: `upload.${ext}`,
       originalname: `upload.${ext}`,
-      encoding: '',
-    });
+      encoding: '7bit',
+    };
+    const getFile = await this.storage.uploadFile(uploadedFile);
+    const thumbnail = await createAndUploadVideoThumbnail(
+      this.storage,
+      uploadedFile
+    );
 
     return this._mediaService.saveFile(
       org.id,
       getFile.originalname,
-      getFile.path
+      getFile.path,
+      uploadedFile.originalname,
+      {
+        thumbnail,
+        type: mimetype.startsWith('video/') ? 'video' : 'image',
+        fileSize: buffer.length,
+      }
     );
   }
 

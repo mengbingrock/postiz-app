@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -25,6 +26,9 @@ import { UploadFactory } from '@gitroom/nestjs-libraries/upload/upload.factory';
 import { SaveMediaInformationDto } from '@gitroom/nestjs-libraries/dtos/media/save.media.information.dto';
 import { VideoDto } from '@gitroom/nestjs-libraries/dtos/videos/video.dto';
 import { VideoFunctionDto } from '@gitroom/nestjs-libraries/dtos/videos/video.function.dto';
+import { createAndUploadVideoThumbnail } from '@gitroom/nestjs-libraries/upload/video.thumbnail';
+import { stat } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 
 @ApiTags('Media')
 @Controller('/media')
@@ -34,6 +38,74 @@ export class MediaController {
     private _mediaService: MediaService,
     private _subscriptionService: SubscriptionService
   ) {}
+
+  private async sendLocalMedia(
+    mediaUrl: string,
+    res: Response,
+    notFoundMessage: string
+  ) {
+    let storedUrl: URL;
+    let frontendUrl: URL;
+    try {
+      storedUrl = new URL(mediaUrl);
+      frontendUrl = new URL(process.env.FRONTEND_URL!);
+    } catch {
+      throw new NotFoundException(notFoundMessage);
+    }
+
+    if (storedUrl.origin !== frontendUrl.origin) {
+      return res.redirect(storedUrl.toString());
+    }
+
+    if (!storedUrl.pathname.startsWith('/uploads/')) {
+      throw new NotFoundException(notFoundMessage);
+    }
+
+    const base = resolve(process.env.UPLOAD_DIRECTORY!);
+    let filePath: string;
+    try {
+      filePath = resolve(
+        base,
+        decodeURIComponent(storedUrl.pathname.slice('/uploads/'.length))
+      );
+    } catch {
+      throw new NotFoundException(notFoundMessage);
+    }
+    if (filePath === base || !filePath.startsWith(base + sep)) {
+      throw new NotFoundException(notFoundMessage);
+    }
+
+    const fileStats = await stat(filePath).catch(() => undefined);
+    if (!fileStats?.isFile()) throw new NotFoundException(notFoundMessage);
+
+    res.type(filePath);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return res.sendFile(filePath);
+  }
+
+  @Get('/:id/content')
+  async mediaContent(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Res() res: Response
+  ) {
+    const media = await this._mediaService.getMediaByIdForOrg(org.id, id);
+    if (!media?.path) throw new NotFoundException('Media not found.');
+
+    return this.sendLocalMedia(media.path, res, 'Media not found.');
+  }
+
+  @Get('/:id/preview')
+  async previewMedia(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Res() res: Response
+  ) {
+    const media = await this._mediaService.getMediaByIdForOrg(org.id, id);
+    if (!media?.thumbnail) throw new NotFoundException('Preview not found.');
+
+    return this.sendLocalMedia(media.thumbnail, res, 'Preview not found.');
+  }
 
   @Delete('/:id')
   deleteMedia(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
@@ -93,11 +165,17 @@ export class MediaController {
   ) {
     const originalName = file?.originalname || '';
     const uploadedFile = await this.storage.uploadFile(file);
+    const thumbnail = await createAndUploadVideoThumbnail(this.storage, file);
     return this._mediaService.saveFile(
       org.id,
       uploadedFile.originalname,
       uploadedFile.path,
-      originalName
+      originalName,
+      {
+        thumbnail,
+        type: file.mimetype.startsWith('video/') ? 'video' : 'image',
+        fileSize: file.size,
+      }
     );
   }
 
@@ -143,11 +221,18 @@ export class MediaController {
       return { path };
     }
 
+    const thumbnail = await createAndUploadVideoThumbnail(this.storage, file);
+
     return this._mediaService.saveFile(
       org.id,
       getFile.originalname,
       getFile.path,
-      originalName
+      originalName,
+      {
+        thumbnail,
+        type: file.mimetype.startsWith('video/') ? 'video' : 'image',
+        fileSize: file.size,
+      }
     );
   }
 
@@ -193,10 +278,12 @@ export class MediaController {
   }
 
   @Post('/video/function')
-  videoFunction(
-    @Body() body: VideoFunctionDto
-  ) {
-    return this._mediaService.videoFunction(body.identifier, body.functionName, body.params);
+  videoFunction(@Body() body: VideoFunctionDto) {
+    return this._mediaService.videoFunction(
+      body.identifier,
+      body.functionName,
+      body.params
+    );
   }
 
   @Get('/generate-video/:type/allowed')

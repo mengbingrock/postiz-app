@@ -13,6 +13,7 @@ import {
 import sharp from 'sharp';
 import { createReadStream, statSync } from 'fs';
 import { Readable } from 'stream';
+import { resolve, sep } from 'path';
 
 export type ValidityMedia = {
   path: string;
@@ -209,6 +210,43 @@ export abstract class SocialAbstract {
     return value || false;
   }
 
+  /**
+   * Resolve media served by this Postiz instance's local `/uploads/` route
+   * directly from disk. Besides avoiding an unnecessary network round trip,
+   * this keeps legitimate first-party media working when the public hostname
+   * resolves to a private address inside the deployment and is therefore
+   * (correctly) rejected by the SSRF-safe network dispatcher.
+   */
+  protected localPostizMediaPath(path: string): string {
+    if (!/^https?:\/\//i.test(path)) return path;
+
+    const frontendUrl = process.env.FRONTEND_URL?.trim();
+    const uploadDirectory = process.env.UPLOAD_DIRECTORY?.trim();
+    if (!frontendUrl || !uploadDirectory) return path;
+
+    try {
+      const mediaUrl = new URL(path);
+      const frontendOrigin = new URL(frontendUrl).origin;
+      if (
+        mediaUrl.origin !== frontendOrigin ||
+        !mediaUrl.pathname.startsWith('/uploads/')
+      ) {
+        return path;
+      }
+
+      const base = resolve(uploadDirectory);
+      const candidate = resolve(
+        base,
+        decodeURIComponent(mediaUrl.pathname.slice('/uploads/'.length))
+      );
+      if (candidate === base || !candidate.startsWith(base + sep)) return path;
+
+      return statSync(candidate).isFile() ? candidate : path;
+    } catch {
+      return path;
+    }
+  }
+
   /** Reads the pixel dimensions of an image via sharp (works for http or local paths). */
   protected async getImageDimensions(
     path: string
@@ -220,7 +258,7 @@ export abstract class SocialAbstract {
         ? `${process.env.FRONTEND_URL}/${path}`
         : path;
     const { width = 0, height = 0 } = await sharp(
-      await readOrFetch(url)
+      await readOrFetch(this.localPostizMediaPath(url))
     ).metadata();
     return { width, height };
   }
@@ -228,6 +266,7 @@ export abstract class SocialAbstract {
   // Resolves the total byte size of the media without loading it into memory:
   // a HEAD request for remote URLs, statSync for local files.
   protected async mediaSize(path: string, identifier = ''): Promise<number> {
+    path = this.localPostizMediaPath(path);
     if (path.indexOf('http') === 0) {
       // the media path is user-influenced, keep the SSRF-safe dispatcher that
       // this.fetch applies to every other outbound request. identity encoding
@@ -264,6 +303,7 @@ export abstract class SocialAbstract {
     end: number,
     identifier = ''
   ): Promise<Buffer> {
+    path = this.localPostizMediaPath(path);
     if (path.indexOf('http') === 0) {
       const response = await fetch(path, {
         headers: {
@@ -302,6 +342,7 @@ export abstract class SocialAbstract {
     path: string,
     identifier = ''
   ): Promise<Readable> {
+    path = this.localPostizMediaPath(path);
     if (path.indexOf('http') !== 0) {
       return createReadStream(path);
     }

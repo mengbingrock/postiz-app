@@ -47,6 +47,10 @@ await mkdir(`${root}/config/rednote/v2.10.1`, {
 });
 await mkdir(`${root}/uploads`, { mode: 0o750, recursive: true });
 await mkdir(`${root}/temporal`, { mode: 0o750, recursive: true });
+await mkdir(`${root}/config/reddit-agent/profiles`, {
+  mode: 0o700,
+  recursive: true,
+});
 
 let env = await readFile(envPath, 'utf8');
 const localDatabaseUrl = new URL(
@@ -113,6 +117,7 @@ const updates = {
   MAIN_URL: publicUrl,
   FRONTEND_URL: publicUrl,
   NEXT_PUBLIC_BACKEND_URL: `${publicUrl}/api`,
+  MCP_URL: publicUrl,
   BACKEND_INTERNAL_URL: 'http://127.0.0.1:3003',
   PORT: '3003',
   DATABASE_URL: remoteDatabaseUrl.toString(),
@@ -124,6 +129,12 @@ const updates = {
   NEXT_PUBLIC_UPLOAD_DIRECTORY: '/uploads',
   XHS_MCP_INSTALL_DIR: `${root}/config/rednote/v2.10.1`,
   XHS_COOKIES_PATH: `${root}/config/rednote/cookies.json`,
+  CHINESEINLA_BROWSER_BIN: '/usr/bin/google-chrome',
+  CHINESEINLA_HEADLESS: 'true',
+  REDDIT_AGENT_BROWSER: '/usr/bin/google-chrome-stable',
+  REDDIT_AGENT_HEADLESS: 'false',
+  REDDIT_AGENT_REMOTE_LOGIN: 'false',
+  REDDIT_AGENT_PROFILE_DIR: `${root}/config/reddit-agent/profiles`,
   NOT_SECURED: 'false',
 };
 

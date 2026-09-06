@@ -4,9 +4,8 @@ import { EventEmitter } from 'events';
 import React, { FC, useCallback, useEffect, useRef, useState } from 'react';
 import { TopTitle } from '@gitroom/frontend/components/launches/helpers/top.title.component';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 import { useLaunchStore } from '@gitroom/frontend/components/new-launch/store';
-import { useVariables } from '@gitroom/react/helpers/variable.context';
 const postUrlEmitter = new EventEmitter();
 
 export const MediaSettingsLayout = () => {
@@ -100,7 +99,6 @@ export const CreateThumbnail: FC<{
   onAltTextChange?: (altText: string) => void;
 }> = (props) => {
   const { onSelect, media } = props;
-  const { backendUrl } = useVariables();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -214,9 +212,7 @@ export const CreateThumbnail: FC<{
       <div className="relative bg-black rounded-lg overflow-hidden">
         <video
           ref={videoRef}
-          src={
-            backendUrl + '/public/stream?url=' + encodeURIComponent(media.path)
-          }
+          src={`/api/media/${encodeURIComponent(media.id)}/content`}
           className="w-full h-[200px] object-contain"
           onLoadedMetadata={handleLoadedMetadata}
           onTimeUpdate={handleTimeUpdate}
@@ -376,7 +372,7 @@ export const MediaComponentInner: FC<{
           className="w-full px-3 py-2 bg-fifth border border-tableBorder rounded-lg text-textColor placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-forth focus:border-transparent"
         />
       </div>
-      {hasExtension(media?.path, 'mp4') && (
+      {hasVideoExtension(media?.path) && (
         <>
           {/* Alt Text Input */}
           <div>

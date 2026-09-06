@@ -34,6 +34,10 @@ const allowedHost = (host: string) => {
   );
 };
 
+const validChineseInLALoginDocument = (html: string) =>
+  /<input\b[^>]*\bname\s*=\s*["']username["'][^>]*>/i.test(html) &&
+  /<input\b[^>]*\bname\s*=\s*["']password["'][^>]*>/i.test(html);
+
 @Injectable()
 export class EgressRelayService implements OnModuleDestroy {
   private readonly logger = new Logger(EgressRelayService.name);
@@ -212,6 +216,51 @@ export class EgressRelayService implements OnModuleDestroy {
       egressIp: ip,
       proxyUrl: `http://127.0.0.1:${this.proxyPort}`,
     };
+  }
+
+  async ensureChineseInLALease(
+    organizationId: string,
+    requestedDeviceId?: string,
+    ttlMinutes = 10
+  ) {
+    this.startLease(organizationId, requestedDeviceId, ttlMinutes);
+    try {
+      const html = await this.httpsGetThroughProxy(
+        'www.chineseinla.com',
+        '/f/page_login.html'
+      );
+      if (!validChineseInLALoginDocument(html)) {
+        throw new Error(
+          'ChineseInLA returned a page without its expected login form.'
+        );
+      }
+      return { ok: true, ...this.status(organizationId) };
+    } catch (error) {
+      this.stopLease(organizationId, 'chineseinla_probe_failed');
+      const reason =
+        error instanceof Error ? error.message : 'Unknown proxy failure.';
+      throw new Error(
+        `The local egress connector could not reach the ChineseInLA login page. ${reason}`
+      );
+    }
+  }
+
+  async withChineseInLALease<T>(
+    organizationId: string,
+    operation: () => Promise<T>,
+    requestedDeviceId?: string,
+    ttlMinutes = 10
+  ) {
+    await this.ensureChineseInLALease(
+      organizationId,
+      requestedDeviceId,
+      ttlMinutes
+    );
+    try {
+      return await operation();
+    } finally {
+      this.stopLease(organizationId, 'chineseinla_operation_finished');
+    }
   }
 
   onModuleDestroy() {
@@ -464,4 +513,4 @@ export class EgressRelayService implements OnModuleDestroy {
   }
 }
 
-export { allowedHost };
+export { allowedHost, validChineseInLALoginDocument };

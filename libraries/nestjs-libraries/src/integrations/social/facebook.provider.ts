@@ -2,6 +2,7 @@ import {
   AnalyticsData,
   AuthTokenDetails,
   ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -31,6 +32,20 @@ const facebookGraphUrl = (path: string) =>
     path.startsWith('/') ? path : `/${path}`
   }`;
 
+const facebookOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['FACEBOOK_APP_ID'],
+  clientSecretEnv: ['FACEBOOK_APP_SECRET'],
+  clientIdLabel: 'Meta App ID',
+  clientSecretLabel: 'Meta App Secret',
+  developerPortalUrl: 'https://developers.facebook.com/apps/creation/',
+  documentationUrl: 'https://developers.facebook.com/docs/facebook-login/',
+  help: [
+    'Add the Manage everything on your Page use case and Facebook Login for Business.',
+    'Enable Client OAuth Login and Web OAuth Login in Facebook Login for Business settings.',
+    'Add the Page permissions shown below under Use cases → Permissions and features.',
+  ],
+};
+
 @Rules(
   "Facebook posts can be text only, or include photos or a video. If it's a story, it must have at least one attachment (photo or video), and each media is published as a separate story."
 )
@@ -39,6 +54,7 @@ export class FacebookProvider extends SocialAbstract implements SocialProvider {
   name = 'Facebook Page';
   isBetweenSteps = true;
   customOAuthCredentials = true;
+  oauthCredentialSetup = facebookOAuthCredentialSetup;
   scopes = [
     'pages_show_list',
     'business_management',

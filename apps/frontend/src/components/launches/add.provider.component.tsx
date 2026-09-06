@@ -23,6 +23,11 @@ import { RedNoteConnectionSetup } from '@gitroom/frontend/components/launches/re
 import { FacebookConnectionSetup } from '@gitroom/frontend/components/launches/facebook.connection.setup';
 import { LinkedinPageByoConnectionSetup } from '@gitroom/frontend/components/launches/linkedin.page.byo.connection.setup';
 import { ChineseInLAConnectionSetup } from '@gitroom/frontend/components/launches/chineseinla.connection.setup';
+import { RedditAgentConnectionSetup } from '@gitroom/frontend/components/launches/reddit.agent.connection.setup';
+import {
+  OAuthCredentialsSetup,
+  type OAuthCredentialSetupView,
+} from '@gitroom/frontend/components/launches/oauth.credentials.setup';
 const resolver = classValidatorResolver(ApiKeyDto);
 
 export const useAddProvider = (update?: () => void, invite?: boolean) => {
@@ -389,6 +394,8 @@ export const AddProviderComponent: FC<{
     isWeb3: boolean;
     isChromeExtension?: boolean;
     customOAuthCredentials?: boolean;
+    missingOAuthCredentials?: boolean;
+    oauthCredentialSetup?: OAuthCredentialSetupView;
     extensionCookies?: Array<{
       name: string;
       domain: string;
@@ -431,10 +438,39 @@ export const AddProviderComponent: FC<{
           defaultValue?: string;
           type: 'text' | 'password';
           hint?: string;
-        }>
+        }>,
+        providerName?: string,
+        missingOAuthCredentials?: boolean,
+        oauthCredentialSetup?: OAuthCredentialSetupView
       ) =>
       async () => {
         const onboardingParam = onboarding ? 'onboarding=true' : '';
+        const openOAuthCredentialSetup = (missing?: string[]) => {
+          if (!oauthCredentialSetup) {
+            return false;
+          }
+          modal.openModal({
+            title: t('configure_oauth_app', `Configure ${providerName} app`),
+            withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
+            classNames: {
+              modal: 'bg-transparent text-textColor',
+            },
+            children: (
+              <OAuthCredentialsSetup
+                identifier={identifier}
+                providerName={providerName || capitalize(identifier)}
+                setup={{
+                  ...oauthCredentialSetup,
+                  missing: missing || oauthCredentialSetup.missing,
+                }}
+                onboarding={onboarding}
+                redirectUrl={isMobile ? 'postiz://integrations' : undefined}
+              />
+            ),
+          });
+          return true;
+        };
         const openWeb3 = async () => {
           const { component: Web3Providers } = web3List.find(
             (item) => item.identifier === identifier
@@ -484,11 +520,14 @@ export const AddProviderComponent: FC<{
           ]
             .filter(Boolean)
             .join('&');
-          const { url, err } = await (
+          const { url, err, requiresOAuthCredentials, missing } = await (
             await fetch(
               `/integrations/social/${identifier}${params ? `?${params}` : ''}`
             )
           ).json();
+          if (requiresOAuthCredentials && openOAuthCredentialSetup(missing)) {
+            return;
+          }
           if (err) {
             toaster.show(
               t(
@@ -645,6 +684,10 @@ export const AddProviderComponent: FC<{
           });
           return;
         }
+        if (missingOAuthCredentials && oauthCredentialSetup) {
+          openOAuthCredentialSetup();
+          return;
+        }
         if (identifier === 'facebook') {
           modal.openModal({
             title: t('connect_facebook_page', 'Connect Facebook Page'),
@@ -696,6 +739,12 @@ export const AddProviderComponent: FC<{
               >
                 {identifier === 'rednote' ? (
                   <RedNoteConnectionSetup
+                    gotoUrl={(url: string) => router.push(url)}
+                    variables={customFields}
+                    onboarding={onboarding}
+                  />
+                ) : identifier === 'reddit-agent' ? (
+                  <RedditAgentConnectionSetup
                     gotoUrl={(url: string) => router.push(url)}
                     variables={customFields}
                     onboarding={onboarding}
@@ -760,7 +809,10 @@ export const AddProviderComponent: FC<{
                   item.isExternal,
                   item.isWeb3,
                   item.isChromeExtension,
-                  item.customFields
+                  item.customFields,
+                  item.name,
+                  item.missingOAuthCredentials,
+                  item.oauthCredentialSetup
                 )}
                 {...(!!item.toolTip
                   ? {
@@ -785,7 +837,11 @@ export const AddProviderComponent: FC<{
                         item.identifier !== 'google_my_business' &&
                           'rounded-full'
                       )}
-                      src={`/icons/platforms/${item.identifier}.png`}
+                      src={`/icons/platforms/${
+                        item.identifier === 'reddit-agent'
+                          ? 'reddit'
+                          : item.identifier
+                      }.png`}
                     />
                   )}
                 </div>

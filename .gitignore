@@ -66,3 +66,5 @@ apps/frontend/public/g.js
 # Local runtime uploads
 /uploads/
 /apps/backend/undefined/
+/config/reddit-agent/
+/apps/backend/config/reddit-agent/

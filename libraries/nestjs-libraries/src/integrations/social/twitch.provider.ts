@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -9,21 +11,51 @@ import { SocialAbstract } from '@gitroom/nestjs-libraries/integrations/social.ab
 import { Integration } from '@prisma/client';
 import { TwitchDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/twitch.dto';
 import { timer } from '@gitroom/helpers/utils/timer';
+import {
+  resolveIntegrationOAuthCredentials,
+  resolveOAuthCredentials,
+} from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const twitchOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['TWITCH_CLIENT_ID'],
+  clientSecretEnv: ['TWITCH_CLIENT_SECRET'],
+  clientIdLabel: 'Twitch Client ID',
+  clientSecretLabel: 'Twitch Client Secret',
+  developerPortalUrl: 'https://dev.twitch.tv/console/apps',
+  documentationUrl: 'https://dev.twitch.tv/docs/authentication/',
+  help: [
+    'Register a Twitch application and choose the category closest to your use case.',
+    'Add the Postiz callback URL shown below as an OAuth redirect URL.',
+  ],
+};
 
 export class TwitchProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 1;
   identifier = 'twitch';
   name = 'Twitch';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = twitchOAuthCredentialSetup;
   isBetweenSteps = false;
   editor = 'normal' as const;
-  scopes = ['user:write:chat', 'user:read:chat', 'moderator:manage:announcements'];
+  scopes = [
+    'user:write:chat',
+    'user:read:chat',
+    'moderator:manage:announcements',
+  ];
   dto = TwitchDto;
 
   maxLength() {
     return 500; // Twitch chat message max length
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthTokenDetails> {
+  async refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const credentials = resolveOAuthCredentials(
+      twitchOAuthCredentialSetup,
+      clientInformation
+    );
     const response = await this.fetch('https://id.twitch.tv/oauth2/token', {
       method: 'POST',
       headers: {
@@ -31,8 +63,8 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        client_id: process.env.TWITCH_CLIENT_ID!,
-        client_secret: process.env.TWITCH_CLIENT_SECRET!,
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
         refresh_token: refreshToken,
       }),
     });
@@ -40,7 +72,10 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
     const { access_token, refresh_token, expires_in } = await response.json();
 
     // Get user info
-    const userInfo = await this.getUserInfo(access_token);
+    const userInfo = await this.getUserInfo(
+      access_token,
+      credentials.client_id
+    );
 
     return {
       refreshToken: refresh_token,
@@ -53,15 +88,19 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(32);
+    const credentials = resolveOAuthCredentials(
+      twitchOAuthCredentialSetup,
+      clientInformation
+    );
 
     const redirectUri = `${process.env.FRONTEND_URL}/integrations/social/twitch`;
 
     const url =
       `https://id.twitch.tv/oauth2/authorize` +
       `?response_type=code` +
-      `&client_id=${process.env.TWITCH_CLIENT_ID}` +
+      `&client_id=${encodeURIComponent(credentials.client_id)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&scope=${encodeURIComponent(this.scopes.join(' '))}` +
       `&state=${state}`;
@@ -73,34 +112,49 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
-    const redirectUri = `${process.env.FRONTEND_URL}/integrations/social/twitch${
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      twitchOAuthCredentialSetup,
+      clientInformation
+    );
+    const redirectUri = `${
+      process.env.FRONTEND_URL
+    }/integrations/social/twitch${
       params.refresh ? `?refresh=${params.refresh}` : ''
     }`;
 
-    const tokenResponse = await this.fetch('https://id.twitch.tv/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        client_id: process.env.TWITCH_CLIENT_ID!,
-        client_secret: process.env.TWITCH_CLIENT_SECRET!,
-        redirect_uri: redirectUri,
-        code: params.code,
-      }),
-    });
+    const tokenResponse = await this.fetch(
+      'https://id.twitch.tv/oauth2/token',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: credentials.client_id,
+          client_secret: credentials.client_secret,
+          redirect_uri: redirectUri,
+          code: params.code,
+        }),
+      }
+    );
 
     const { access_token, refresh_token, expires_in } =
       await tokenResponse.json();
 
     // Get user info
-    const userInfo = await this.getUserInfo(access_token);
+    const userInfo = await this.getUserInfo(
+      access_token,
+      credentials.client_id
+    );
 
     return {
       id: userInfo.id,
@@ -114,13 +168,14 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
   }
 
   private async getUserInfo(
-    accessToken: string
+    accessToken: string,
+    clientId = process.env.TWITCH_CLIENT_ID || ''
   ): Promise<{ id: string; name: string; username: string; picture?: string }> {
     const userResponse = await fetch('https://api.twitch.tv/helix/users', {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        'Client-Id': process.env.TWITCH_CLIENT_ID!,
+        'Client-Id': clientId,
       },
     });
 
@@ -139,7 +194,8 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
     broadcasterId: string,
     accessToken: string,
     message: string,
-    color: string = 'primary'
+    color: string = 'primary',
+    clientId = process.env.TWITCH_CLIENT_ID || ''
   ): Promise<{ success: boolean }> {
     await fetch(
       `https://api.twitch.tv/helix/chat/announcements?broadcaster_id=${broadcasterId}&moderator_id=${broadcasterId}`,
@@ -147,7 +203,7 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          'Client-Id': process.env.TWITCH_CLIENT_ID!,
+          'Client-Id': clientId,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -165,7 +221,8 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
     broadcasterId: string,
     accessToken: string,
     message: string,
-    replyToMessageId?: string
+    replyToMessageId?: string,
+    clientId = process.env.TWITCH_CLIENT_ID || ''
   ): Promise<{ messageId: string; isSent: boolean }> {
     const body: Record<string, string> = {
       broadcaster_id: broadcasterId,
@@ -183,7 +240,7 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          'Client-Id': process.env.TWITCH_CLIENT_ID!,
+          'Client-Id': clientId,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -205,36 +262,52 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
     integration: Integration
   ): Promise<PostResponse[]> {
     await timer(2000);
+    const clientId = resolveIntegrationOAuthCredentials(
+      twitchOAuthCredentialSetup,
+      integration
+    ).client_id;
     const [firstPost] = postDetails;
     const messageType = firstPost.settings?.messageType || 'message';
-    const announcementColor = firstPost.settings?.announcementColor || 'primary';
+    const announcementColor =
+      firstPost.settings?.announcementColor || 'primary';
 
     if (messageType === 'announcement') {
       const result = await this.sendAnnouncement(
         id,
         accessToken,
         firstPost.message,
-        announcementColor
+        announcementColor,
+        clientId
       );
 
       return [
         {
           id: firstPost.id,
           postId: makeId(10), // Announcements don't return a message ID
-          releaseURL: `https://twitch.tv/${integration.profile || integration.providerIdentifier}`,
+          releaseURL: `https://twitch.tv/${
+            integration.profile || integration.providerIdentifier
+          }`,
           status: result.success ? 'posted' : 'error',
         },
       ];
     }
 
     // Regular chat message
-    const result = await this.sendChatMessage(id, accessToken, firstPost.message);
+    const result = await this.sendChatMessage(
+      id,
+      accessToken,
+      firstPost.message,
+      undefined,
+      clientId
+    );
 
     return [
       {
         id: firstPost.id,
         postId: result.messageId,
-        releaseURL: `https://twitch.tv/${integration.profile || integration.providerIdentifier}`,
+        releaseURL: `https://twitch.tv/${
+          integration.profile || integration.providerIdentifier
+        }`,
         status: result.isSent ? 'posted' : 'error',
       },
     ];
@@ -249,23 +322,31 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
     integration: Integration
   ): Promise<PostResponse[]> {
     await timer(2000);
+    const clientId = resolveIntegrationOAuthCredentials(
+      twitchOAuthCredentialSetup,
+      integration
+    ).client_id;
     const [commentPost] = postDetails;
     const messageType = commentPost.settings?.messageType || 'message';
-    const announcementColor = commentPost.settings?.announcementColor || 'primary';
+    const announcementColor =
+      commentPost.settings?.announcementColor || 'primary';
 
     if (messageType === 'announcement') {
       const result = await this.sendAnnouncement(
         id,
         accessToken,
         commentPost.message,
-        announcementColor
+        announcementColor,
+        clientId
       );
 
       return [
         {
           id: commentPost.id,
           postId: makeId(10),
-          releaseURL: `https://twitch.tv/${integration.profile || integration.providerIdentifier}`,
+          releaseURL: `https://twitch.tv/${
+            integration.profile || integration.providerIdentifier
+          }`,
           status: result.success ? 'posted' : 'error',
         },
       ];
@@ -276,14 +357,17 @@ export class TwitchProvider extends SocialAbstract implements SocialProvider {
       id,
       accessToken,
       commentPost.message,
-      lastCommentId || postId
+      lastCommentId || postId,
+      clientId
     );
 
     return [
       {
         id: commentPost.id,
         postId: result.messageId,
-        releaseURL: `https://twitch.tv/${integration.profile || integration.providerIdentifier}`,
+        releaseURL: `https://twitch.tv/${
+          integration.profile || integration.providerIdentifier
+        }`,
         status: result.isSent ? 'posted' : 'error',
       },
     ];

@@ -15,6 +15,8 @@ const LOCAL_STORAGE_ALLOWED_MIME = new Set<string>([
   'image/bmp',
   'image/tiff',
   'video/mp4',
+  'video/mpeg',
+  'video/quicktime',
   'audio/mpeg',
   'audio/mp4',
   'audio/wav',

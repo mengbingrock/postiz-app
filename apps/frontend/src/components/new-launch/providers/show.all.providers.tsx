@@ -70,6 +70,10 @@ export const Providers = [
     component: RedditProvider,
   },
   {
+    identifier: 'reddit-agent',
+    component: RedditProvider,
+  },
+  {
     identifier: 'medium',
     component: MediumProvider,
   },

@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -10,11 +12,27 @@ import dayjs from 'dayjs';
 import { Integration } from '@prisma/client';
 import { KickDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/kick.dto';
 import { createHash, randomBytes } from 'crypto';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const kickOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['KICK_CLIENT_ID'],
+  clientSecretEnv: ['KICK_SECRET'],
+  clientIdLabel: 'Kick Client ID',
+  clientSecretLabel: 'Kick Client Secret',
+  developerPortalUrl: 'https://dev.kick.com/',
+  documentationUrl: 'https://docs.kick.com/getting-started/getting-started',
+  help: [
+    'Create a Kick developer application and enable the chat and channel scopes shown below.',
+    'Add the Postiz callback URL shown below to the app redirect URLs.',
+  ],
+};
 
 export class KickProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 3;
   identifier = 'kick';
   name = 'Kick';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = kickOAuthCredentialSetup;
   isBetweenSteps = false;
   editor = 'normal' as const;
   scopes = ['chat:write', 'user:read', 'channel:read'];
@@ -37,7 +55,14 @@ export class KickProvider extends SocialAbstract implements SocialProvider {
     return { codeVerifier, codeChallenge: challenge };
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthTokenDetails> {
+  async refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const credentials = resolveOAuthCredentials(
+      kickOAuthCredentialSetup,
+      clientInformation
+    );
     const response = await this.fetch('https://id.kick.com/oauth/token', {
       method: 'POST',
       headers: {
@@ -45,8 +70,8 @@ export class KickProvider extends SocialAbstract implements SocialProvider {
       },
       body: new URLSearchParams({
         grant_type: 'refresh_token',
-        client_id: process.env.KICK_CLIENT_ID!,
-        client_secret: process.env.KICK_SECRET!,
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
         refresh_token: refreshToken,
       }),
     });
@@ -67,16 +92,20 @@ export class KickProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(32);
     const { codeVerifier, codeChallenge } = this.generatePKCE();
+    const credentials = resolveOAuthCredentials(
+      kickOAuthCredentialSetup,
+      clientInformation
+    );
 
     const redirectUri = `${process.env.FRONTEND_URL}/integrations/social/kick`;
 
     const url =
       `https://id.kick.com/oauth/authorize` +
       `?response_type=code` +
-      `&client_id=${process.env.KICK_CLIENT_ID}` +
+      `&client_id=${encodeURIComponent(credentials.client_id)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&scope=${encodeURIComponent(this.scopes.join(' '))}` +
       `&state=${state}` +
@@ -90,11 +119,18 @@ export class KickProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      kickOAuthCredentialSetup,
+      clientInformation
+    );
     const redirectUri = `${process.env.FRONTEND_URL}/integrations/social/kick${
       params.refresh ? `?refresh=${params.refresh}` : ''
     }`;
@@ -106,8 +142,8 @@ export class KickProvider extends SocialAbstract implements SocialProvider {
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
-        client_id: process.env.KICK_CLIENT_ID!,
-        client_secret: process.env.KICK_SECRET!,
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
         redirect_uri: redirectUri,
         code: params.code,
         code_verifier: params.codeVerifier,

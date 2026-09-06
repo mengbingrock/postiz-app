@@ -29,6 +29,18 @@ type SetupResponse = {
   otpRequired?: boolean;
   otpAttempts?: number;
   otpMaxAttempts?: number;
+  agentEnabled?: boolean;
+  agentUi?: AgentUi;
+};
+
+type AgentUi = {
+  view: 'qr' | 'waiting' | 'otp' | 'manual' | 'complete' | 'error';
+  tone: 'neutral' | 'warning' | 'success' | 'danger';
+  title: string;
+  message: string;
+  primaryAction: 'none' | 'submit_otp' | 'restart' | 'connect';
+  source: 'agent' | 'fallback';
+  authMode: 'api_key' | 'chatgpt_subscription' | 'fallback';
 };
 
 type Variable = {
@@ -68,6 +80,8 @@ export const RedNoteConnectionSetup: FC<{
   const [otpCode, setOtpCode] = useState('');
   const [otpAttempts, setOtpAttempts] = useState(0);
   const [otpMaxAttempts, setOtpMaxAttempts] = useState(3);
+  const [agentEnabled, setAgentEnabled] = useState(false);
+  const [agentUi, setAgentUi] = useState<AgentUi>();
   const [starting, setStarting] = useState(false);
   const [submittingOtp, setSubmittingOtp] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -85,6 +99,8 @@ export const RedNoteConnectionSetup: FC<{
     setLoginState(data.loginState);
     setOtpAttempts(data.otpAttempts || 0);
     setOtpMaxAttempts(data.otpMaxAttempts || 3);
+    setAgentEnabled(Boolean(data.agentEnabled));
+    setAgentUi(data.agentUi);
     if (!data.otpRequired) {
       setOtpCode('');
     }
@@ -126,6 +142,7 @@ export const RedNoteConnectionSetup: FC<{
     setLoginState(undefined);
     setOtpCode('');
     setOtpAttempts(0);
+    setAgentUi(undefined);
     setMessage('Installing verified RedNote tools if needed…');
     try {
       const response = await fetch('/integrations/rednote/login/start', {
@@ -145,6 +162,8 @@ export const RedNoteConnectionSetup: FC<{
       setLoginState(data.loginState);
       setOtpAttempts(data.otpAttempts || 0);
       setOtpMaxAttempts(data.otpMaxAttempts || 3);
+      setAgentEnabled(Boolean(data.agentEnabled));
+      setAgentUi(data.agentUi);
     } catch (error) {
       setStatus('error');
       setMessage(
@@ -188,6 +207,8 @@ export const RedNoteConnectionSetup: FC<{
       setLoginState(data.loginState);
       setOtpAttempts(data.otpAttempts || 0);
       setOtpMaxAttempts(data.otpMaxAttempts || 3);
+      setAgentEnabled(Boolean(data.agentEnabled));
+      setAgentUi(data.agentUi);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -254,9 +275,20 @@ export const RedNoteConnectionSetup: FC<{
       ? 'text-red-500'
       : 'text-textColor/70';
   const showOtp =
-    loginState === 'otp_required' ||
-    loginState === 'submitting_otp' ||
-    loginState === 'otp_submitted';
+    agentUi?.view === 'otp' ||
+    (!agentUi &&
+      (loginState === 'otp_required' ||
+        loginState === 'submitting_otp' ||
+        loginState === 'otp_submitted'));
+  const showQr = agentUi ? agentUi.view === 'qr' : Boolean(qrCode);
+  const agentToneClass =
+    agentUi?.tone === 'success'
+      ? 'border-green-500/40 bg-green-500/10'
+      : agentUi?.tone === 'danger'
+      ? 'border-red-500/40 bg-red-500/10'
+      : agentUi?.tone === 'warning'
+      ? 'border-orange-500/40 bg-orange-500/10'
+      : 'border-tableBorder bg-newBgColorInner';
 
   return (
     <div className="flex flex-col gap-[14px] pt-[10px] min-w-[420px] max-w-[520px]">
@@ -273,7 +305,27 @@ export const RedNoteConnectionSetup: FC<{
             </div>
           </div>
         </div>
-        {qrCode ? (
+        {agentUi ? (
+          <div
+            className={`rounded-[8px] border p-[12px] ${agentToneClass}`}
+            data-testid="rednote-login-agent-view"
+          >
+            <div className="flex items-center justify-between gap-[12px]">
+              <div className="text-[13px] font-semibold">{agentUi.title}</div>
+              <div className="shrink-0 rounded-full border border-tableBorder px-[8px] py-[2px] text-[10px] text-textColor/60">
+                {agentEnabled && agentUi.source === 'agent'
+                  ? agentUi.authMode === 'chatgpt_subscription'
+                    ? 'Subscription agent'
+                    : 'Login agent'
+                  : 'Safe fallback'}
+              </div>
+            </div>
+            <div className="mt-[4px] text-[12px] text-textColor/70">
+              {agentUi.message}
+            </div>
+          </div>
+        ) : null}
+        {showQr && qrCode ? (
           <div className="flex flex-col items-center gap-[8px] rounded-[8px] bg-white p-[14px]">
             <img
               src={qrCode}
@@ -358,6 +410,8 @@ export const RedNoteConnectionSetup: FC<{
             ? 'Login Session Active'
             : status === 'success'
             ? 'Log in with Another Account'
+            : agentUi?.primaryAction === 'restart'
+            ? 'Start New Login Session'
             : 'Get Xiaohongshu QR Code'}
         </Button>
       </section>

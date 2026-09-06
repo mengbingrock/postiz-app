@@ -1,22 +1,34 @@
 import { FC } from 'react';
 import { clsx } from 'clsx';
-import { hasExtension } from '@gitroom/helpers/utils/has.extension';
+import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 export const VideoOrImage: FC<{
   src: string;
   autoplay: boolean;
+  mediaPath?: string;
+  poster?: string;
   isContain?: boolean;
   imageClassName?: string;
   videoClassName?: string;
 }> = (props) => {
-  const { src, autoplay, isContain, imageClassName, videoClassName } = props;
-  if (hasExtension(src, 'mp4')) {
+  const {
+    src,
+    autoplay,
+    mediaPath,
+    poster,
+    isContain,
+    imageClassName,
+    videoClassName,
+  } = props;
+  if (hasVideoExtension(mediaPath || src)) {
     return (
       <video
         src={src}
+        poster={poster}
         autoPlay={autoplay}
         className={clsx('w-full h-full', videoClassName)}
         muted={true}
         loop={true}
+        playsInline={true}
       />
     );
   }

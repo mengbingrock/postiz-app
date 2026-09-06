@@ -18,6 +18,7 @@ import {
   ValidUrlExtension,
   ValidUrlPath,
 } from '@gitroom/helpers/utils/valid.url.path';
+import { BadBody } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 
 type ChineseInLALoginSession = {
@@ -241,11 +242,12 @@ export class ChineseInLAProvider
   }
 
   async loginWithPassword(
+    key: string,
     value: Partial<RedNoteCredentials> | undefined,
     username: string,
     password: string
   ) {
-    const credentials = this.setupCredentials(value);
+    const credentials = await this.setupIsolatedCredentials(key, value);
     try {
       const existingLogin = this.parseJson<ChineseInLALoginStatus>(
         await this.callMcpTool(
@@ -261,6 +263,7 @@ export class ChineseInLAProvider
         return {
           success: true,
           state: 'authenticated' as const,
+          code: this.encodeCredentials(credentials),
           message:
             'ChineseInLA is already authenticated. Postiz reused the isolated browser cookie without submitting the entered password.',
         };
@@ -317,6 +320,7 @@ export class ChineseInLAProvider
     return {
       success: true,
       state: 'authenticated' as const,
+      code: this.encodeCredentials(credentials),
       message:
         'ChineseInLA login succeeded. The isolated browser cookie is ready for Postiz.',
     };
@@ -826,29 +830,48 @@ export class ChineseInLAProvider
       );
     }
 
-    const credentials = this.decodeCredentials(accessToken);
-    const output = await this.callMcpTool(
-      credentials,
-      'chineseinla_publish_post',
-      { draft_id: draftId, confirm_publish: true },
-      5 * 60_000
-    );
-    const published = this.parseJson<ChineseInLAPublishResponse>(
-      output,
-      'publish result'
-    );
-    if (published.status !== 'published' || !published.topic_url) {
-      throw new Error(
-        published.message || 'ChineseInLA did not confirm publication.'
+    try {
+      const credentials = this.decodeCredentials(accessToken);
+      const output = await this.callMcpTool(
+        credentials,
+        'chineseinla_publish_post',
+        { draft_id: draftId, confirm_publish: true },
+        5 * 60_000
+      );
+      const published = this.parseJson<ChineseInLAPublishResponse>(
+        output,
+        'publish result'
+      );
+      if (published.status !== 'published' || !published.topic_url) {
+        throw new Error(
+          published.message || 'ChineseInLA did not confirm publication.'
+        );
+      }
+
+      return postDetails.map((item) => ({
+        id: item.id,
+        postId: published.topic_url,
+        releaseURL: published.topic_url,
+        status: 'completed',
+      }));
+    } catch (error) {
+      if (error instanceof BadBody) {
+        throw error;
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'ChineseInLA publishing failed with an unknown error.';
+      // A prepared ChineseInLA form is a one-shot browser mutation. Retrying
+      // it can click Submit again or replace the original platform error with
+      // a misleading stale-tab failure, so make the first result terminal.
+      throw new BadBody(
+        this.identifier,
+        JSON.stringify({ draftId }),
+        Buffer.from('{}'),
+        message
       );
     }
-
-    return postDetails.map((item) => ({
-      id: item.id,
-      postId: published.topic_url,
-      releaseURL: published.topic_url,
-      status: 'completed',
-    }));
   }
 
   override async customFields() {

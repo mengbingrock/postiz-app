@@ -5,6 +5,19 @@ export interface ClientInformation {
   client_secret: string;
   instanceUrl: string;
 }
+
+export type OAuthCredentialSetup = {
+  /** Environment variables checked, in priority order, for a server default. */
+  clientIdEnv: string[];
+  clientSecretEnv: string[];
+  clientIdLabel: string;
+  clientSecretLabel: string;
+  developerPortalUrl: string;
+  documentationUrl: string;
+  help: string[];
+  /** Override the default /integrations/social/:identifier callback path. */
+  callbackPath?: string;
+};
 export interface IAuthenticator {
   authenticate(
     params: {
@@ -199,6 +212,12 @@ export interface SocialProvider
    * OAuth flow is pending, and persisted encrypted with the integration.
    */
   customOAuthCredentials?: boolean;
+  /**
+   * Describes a provider's OAuth application credentials. The integration
+   * list exposes this non-secret metadata so a missing server configuration
+   * can become an inline setup wizard instead of a failed OAuth redirect.
+   */
+  oauthCredentialSetup?: OAuthCredentialSetup;
   validateCustomOAuthCredentials?(
     clientInformation: ClientInformation
   ): string | undefined;

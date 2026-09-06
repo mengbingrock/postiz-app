@@ -16,6 +16,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import utc from 'dayjs/plugin/utc';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateTagDto } from '@gitroom/nestjs-libraries/dtos/posts/create.tag.dto';
+import { postErrorMessage } from '@gitroom/nestjs-libraries/database/prisma/posts/post.error.message';
 
 dayjs.extend(isoWeek);
 dayjs.extend(weekOfYear);
@@ -172,6 +173,7 @@ export class PostsRepository {
         releaseURL: true,
         releaseId: true,
         state: true,
+        error: true,
         intervalInDays: true,
         group: true,
         creationMethod: true,
@@ -411,15 +413,14 @@ export class PostsRepository {
   }
 
   async changeState(id: string, state: State, err?: any, body?: any) {
+    const errorMessage = postErrorMessage(err);
     const update = await this._post.model.post.update({
       where: {
         id,
       },
       data: {
         state,
-        ...(err
-          ? { error: typeof err === 'string' ? err : JSON.stringify(err) }
-          : {}),
+        ...(errorMessage ? { error: errorMessage } : {}),
       },
       include: {
         integration: {
@@ -434,7 +435,7 @@ export class PostsRepository {
       try {
         await this._errors.model.errors.create({
           data: {
-            message: typeof err === 'string' ? err : JSON.stringify(err),
+            message: errorMessage || 'Unknown publication error',
             organizationId: update.organizationId,
             platform: update.integration.providerIdentifier,
             postId: update.id,

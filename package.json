@@ -166,6 +166,7 @@
     "evp_bytestokey": "^1.0.3",
     "facebook-nodejs-business-sdk": "^21.0.5",
     "fast-xml-parser": "^5.11.0",
+    "ffmpeg-static": "^5.3.0",
     "file-type": "^22.0.2",
     "google-auth-library": "^9.11.0",
     "googleapis": "^137.1.0",
@@ -198,6 +199,7 @@
     "openai": "^6.2.0",
     "p-limit": "^3.1.0",
     "parse5": "^6.0.1",
+    "playwright": "^1.58.2",
     "polotno": "^3.0.0-beta.25",
     "posthog-js": "^1.178.0",
     "react": "19.2.4",
@@ -329,7 +331,8 @@
       "@types/react-dom": "19.1.6"
     },
     "onlyBuiltDependencies": [
-      "bcrypt"
+      "bcrypt",
+      "ffmpeg-static"
     ]
   }
 }

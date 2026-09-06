@@ -8,6 +8,7 @@ import { getMaxSize } from '@gitroom/nestjs-libraries/upload/custom.upload.valid
 import { checkAuth } from '@gitroom/nestjs-libraries/chat/auth.context';
 import { ssrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
 import { Readable } from 'stream';
+import { createAndUploadVideoThumbnail } from '@gitroom/nestjs-libraries/upload/video.thumbnail';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { fileTypeFromBuffer } = require('file-type');
 
@@ -21,6 +22,8 @@ const ALLOWED_MIME = new Set<string>([
   'image/bmp',
   'image/tiff',
   'video/mp4',
+  'video/mpeg',
+  'video/quicktime',
 ]);
 
 @Injectable()
@@ -102,23 +105,34 @@ so the attachment passes the upload-domain validation. Returns the hosted media 
             };
           }
 
-          const getFile = await this.storage.uploadFile({
+          const uploadedFile = {
             buffer,
             mimetype: detected.mime,
             size: buffer.length,
             path: '',
             fieldname: '',
             destination: '',
-            stream: new Readable(),
-            filename: '',
+            stream: Readable.from(buffer),
+            filename: `upload.${detected.ext}`,
             originalname: `upload.${detected.ext}`,
-            encoding: '',
-          });
+            encoding: '7bit',
+          };
+          const getFile = await this.storage.uploadFile(uploadedFile);
+          const thumbnail = await createAndUploadVideoThumbnail(
+            this.storage,
+            uploadedFile
+          );
 
           return await this._mediaService.saveFile(
             org.id,
             getFile.originalname,
-            getFile.path
+            getFile.path,
+            uploadedFile.originalname,
+            {
+              thumbnail,
+              type: detected.mime.startsWith('video/') ? 'video' : 'image',
+              fileSize: buffer.length,
+            }
           );
         } catch (err) {
           // undici's fetch rejects with a generic TypeError('fetch failed')

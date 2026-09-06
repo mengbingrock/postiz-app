@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -19,6 +21,20 @@ import FormDataUpload from 'form-data';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
 import { Integration } from '@prisma/client';
 import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const redditOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['REDDIT_CLIENT_ID'],
+  clientSecretEnv: ['REDDIT_CLIENT_SECRET'],
+  clientIdLabel: 'Reddit Client ID',
+  clientSecretLabel: 'Reddit Client Secret',
+  developerPortalUrl: 'https://www.reddit.com/prefs/apps',
+  documentationUrl: 'https://github.com/reddit-archive/reddit/wiki/OAuth2',
+  help: [
+    'Create a web app (not an installed app or script).',
+    'Use the Postiz callback URL shown below as the redirect URI.',
+  ],
+};
 
 // Travels through the workflow history between postPending, checkPostStatus
 // and finalizePost. The cursor makes every subreddit submit its own
@@ -56,6 +72,8 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 1; // Reddit has strict rate limits (1 request per second)
   identifier = 'reddit';
   name = 'Reddit';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = redditOAuthCredentialSetup;
   isBetweenSteps = false;
   scopes = ['read', 'identity', 'submit', 'flair'];
   editor = 'normal' as const;
@@ -88,14 +106,21 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
     return true;
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthTokenDetails> {
+  async refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const credentials = resolveOAuthCredentials(
+      redditOAuthCredentialSetup,
+      clientInformation
+    );
     const { access_token: accessToken, expires_in: expiresIn } = await (
       await this.fetch('https://www.reddit.com/api/v1/access_token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Authorization: `Basic ${Buffer.from(
-            `${process.env.REDDIT_CLIENT_ID}:${process.env.REDDIT_CLIENT_SECRET}`
+            `${credentials.client_id}:${credentials.client_secret}`
           ).toString('base64')}`,
         },
         body: new URLSearchParams({
@@ -124,11 +149,15 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
     const codeVerifier = makeId(30);
+    const credentials = resolveOAuthCredentials(
+      redditOAuthCredentialSetup,
+      clientInformation
+    );
     const url = `https://www.reddit.com/api/v1/authorize?client_id=${
-      process.env.REDDIT_CLIENT_ID
+      credentials.client_id
     }&response_type=code&state=${state}&redirect_uri=${encodeURIComponent(
       `${process.env.FRONTEND_URL}/integrations/social/reddit`
     )}&duration=permanent&scope=${encodeURIComponent(this.scopes.join(' '))}`;
@@ -139,7 +168,14 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: { code: string; codeVerifier: string }) {
+  async authenticate(
+    params: { code: string; codeVerifier: string },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      redditOAuthCredentialSetup,
+      clientInformation
+    );
     const {
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -151,7 +187,7 @@ export class RedditProvider extends SocialAbstract implements SocialProvider {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           Authorization: `Basic ${Buffer.from(
-            `${process.env.REDDIT_CLIENT_ID}:${process.env.REDDIT_CLIENT_SECRET}`
+            `${credentials.client_id}:${credentials.client_secret}`
           ).toString('base64')}`,
         },
         body: new URLSearchParams({

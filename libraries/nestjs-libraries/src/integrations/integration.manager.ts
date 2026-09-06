@@ -42,6 +42,11 @@ import { TumblrProvider } from '@gitroom/nestjs-libraries/integrations/social/tu
 import { TajimaWebsiteProvider } from '@gitroom/nestjs-libraries/integrations/social/tajima.website.provider';
 import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import { RedditAgentProvider } from '@gitroom/nestjs-libraries/integrations/social/reddit.agent.provider';
+import {
+  hasServerOAuthCredentials,
+  missingOAuthCredentialNames,
+} from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
 
 export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
   new XProvider(),
@@ -49,6 +54,7 @@ export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
   new LinkedinPageProvider(),
   new LinkedinPageByoProvider(),
   new RedditProvider(),
+  new RedditAgentProvider(),
   new InstagramProvider(),
   new InstagramStandaloneProvider(),
   new FacebookProvider(),
@@ -138,20 +144,46 @@ export class IntegrationManager {
       social: await Promise.all(
         socialIntegrationList
           .filter((p) => !this.isHiddenProvider(p.identifier))
-          .map(async (p) => ({
-            name: p.name,
-            identifier: p.identifier,
-            toolTip: p.toolTip,
-            editor: p.editor,
-            isExternal: !!p.externalUrl,
-            isWeb3: !!p.isWeb3,
-            isChromeExtension: !!p.isChromeExtension,
-            customOAuthCredentials: !!p.customOAuthCredentials,
-            ...(p.extensionCookies
-              ? { extensionCookies: p.extensionCookies }
-              : {}),
-            ...(p.customFields ? { customFields: await p.customFields() } : {}),
-          }))
+          .map(async (p) => {
+            const oauthCredentialSetup = p.oauthCredentialSetup;
+            const missingOAuthCredentials = oauthCredentialSetup
+              ? !hasServerOAuthCredentials(oauthCredentialSetup)
+              : false;
+
+            return {
+              name: p.name,
+              identifier: p.identifier,
+              toolTip: p.toolTip,
+              editor: p.editor,
+              isExternal: !!p.externalUrl,
+              isWeb3: !!p.isWeb3,
+              isChromeExtension: !!p.isChromeExtension,
+              customOAuthCredentials: !!p.customOAuthCredentials,
+              missingOAuthCredentials,
+              ...(oauthCredentialSetup
+                ? {
+                    oauthCredentialSetup: {
+                      clientIdLabel: oauthCredentialSetup.clientIdLabel,
+                      clientSecretLabel: oauthCredentialSetup.clientSecretLabel,
+                      developerPortalUrl:
+                        oauthCredentialSetup.developerPortalUrl,
+                      documentationUrl: oauthCredentialSetup.documentationUrl,
+                      help: oauthCredentialSetup.help,
+                      callbackPath: oauthCredentialSetup.callbackPath,
+                      scopes: p.scopes,
+                      missing:
+                        missingOAuthCredentialNames(oauthCredentialSetup),
+                    },
+                  }
+                : {}),
+              ...(p.extensionCookies
+                ? { extensionCookies: p.extensionCookies }
+                : {}),
+              ...(p.customFields
+                ? { customFields: await p.customFields() }
+                : {}),
+            };
+          })
       ),
       article: [] as any[],
     };

@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RedNoteProvider } from './rednote.provider';
 import { Disconnect } from '../social.abstract';
-import { redNoteBinaryPaths } from './rednote.binary.installer';
+import {
+  redNoteBinaryPaths,
+  redNoteChineseInLAProfilePaths,
+} from './rednote.binary.installer';
 
 const credentials = Buffer.from(
   JSON.stringify({
@@ -27,7 +30,10 @@ const postDetails = [
 test('RedNote publish stops before media handling when the session expired', async () => {
   const provider = new RedNoteProvider();
   const calls: string[] = [];
-  (provider as any).callMcpTool = async (_credentials: unknown, name: string) => {
+  (provider as any).callMcpTool = async (
+    _credentials: unknown,
+    name: string
+  ) => {
     calls.push(name);
     return '❌ 未登录\n\n请重新登录。';
   };
@@ -174,7 +180,7 @@ test('RedNote resolves only same-origin Postiz upload URLs to local files', asyn
   }
 });
 
-test('RedNote assigns different persistent cookie profiles and MCP endpoints to different organizations', async () => {
+test('RedNote and ChineseInLA isolate persistent profiles for users in the same organization', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'postiz-rednote-profiles-'));
   const previousConfigDirectory = process.env.POSTIZ_CONFIG_DIR;
   const previousJwtSecret = process.env.JWT_SECRET;
@@ -189,13 +195,13 @@ test('RedNote assigns different persistent cookie profiles and MCP endpoints to 
     const provider = new RedNoteProvider();
 
     const first = await (provider as any).setupIsolatedCredentials(
-      'organization-a'
+      'organization-a\0user-a'
     );
     const second = await (provider as any).setupIsolatedCredentials(
-      'organization-b'
+      'organization-a\0user-b'
     );
     const firstAgain = await (provider as any).setupIsolatedCredentials(
-      'organization-a'
+      'organization-a\0user-a'
     );
 
     assert.notEqual(first.profileId, second.profileId);
@@ -209,6 +215,29 @@ test('RedNote assigns different persistent cookie profiles and MCP endpoints to 
     assert.match(
       firstPaths.cookiePath,
       /profiles[/\\][a-f0-9]{24}[/\\]cookies\.json$/
+    );
+
+    const firstChineseInLAPaths = await redNoteChineseInLAProfilePaths(
+      first.profileId
+    );
+    const secondChineseInLAPaths = await redNoteChineseInLAProfilePaths(
+      second.profileId
+    );
+    assert.notEqual(
+      firstChineseInLAPaths.cookiePath,
+      secondChineseInLAPaths.cookiePath
+    );
+    assert.notEqual(
+      firstChineseInLAPaths.profileDirectory,
+      secondChineseInLAPaths.profileDirectory
+    );
+    assert.notEqual(
+      firstChineseInLAPaths.cdpPort,
+      secondChineseInLAPaths.cdpPort
+    );
+    assert.notEqual(
+      firstChineseInLAPaths.cdpPort,
+      Number(new URL(first.mcpEndpoint).port)
     );
 
     const encoded = Buffer.from(JSON.stringify(first), 'utf8').toString(

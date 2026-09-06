@@ -13,6 +13,7 @@ import {
   Sections,
   SubscriptionException,
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
+import { SaveMediaOptions } from '@gitroom/nestjs-libraries/database/prisma/media/media.repository';
 
 @Injectable()
 export class MediaService {
@@ -31,6 +32,10 @@ export class MediaService {
 
   getMediaById(id: string) {
     return this._mediaRepository.getMediaById(id);
+  }
+
+  getMediaByIdForOrg(org: string, id: string) {
+    return this._mediaRepository.getMediaByIdForOrg(org, id);
   }
 
   async generateImage(
@@ -57,8 +62,20 @@ export class MediaService {
     }
   }
 
-  saveFile(org: string, fileName: string, filePath: string, originalName?: string) {
-    return this._mediaRepository.saveFile(org, fileName, filePath, originalName);
+  saveFile(
+    org: string,
+    fileName: string,
+    filePath: string,
+    originalName?: string,
+    options?: SaveMediaOptions
+  ) {
+    return this._mediaRepository.saveFile(
+      org,
+      fileName,
+      filePath,
+      originalName,
+      options
+    );
   }
 
   getMedia(org: string, page: number, search?: string) {

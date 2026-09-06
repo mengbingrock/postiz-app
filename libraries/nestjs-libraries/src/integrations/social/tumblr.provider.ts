@@ -1,5 +1,7 @@
 import {
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -15,6 +17,20 @@ import { Integration } from '@prisma/client';
 import FormDataUpload from 'form-data';
 import { lookup } from 'mime-types';
 import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const tumblrOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['TUMBLR_CLIENT_ID'],
+  clientSecretEnv: ['TUMBLR_CLIENT_SECRET'],
+  clientIdLabel: 'Tumblr OAuth Consumer Key',
+  clientSecretLabel: 'Tumblr Secret Key',
+  developerPortalUrl: 'https://www.tumblr.com/oauth/apps',
+  documentationUrl: 'https://www.tumblr.com/docs/en/api/v2',
+  help: [
+    'Register a Tumblr application and copy its OAuth Consumer Key and Secret Key.',
+    'Use the callback URL shown below as the application default callback URL.',
+  ],
+};
 
 const TUMBLR_API_URL = 'https://api.tumblr.com/v2';
 const TUMBLR_USER_AGENT = 'Postiz/1.0 (+https://postiz.com)';
@@ -86,6 +102,8 @@ export class TumblrProvider extends SocialAbstract implements SocialProvider {
   override maxConcurrentJob = 3;
   identifier = 'tumblr';
   name = 'Tumblr';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = tumblrOAuthCredentialSetup;
   isBetweenSteps = true;
   scopes = ['write', 'offline_access'];
   editor = 'normal' as const;
@@ -238,13 +256,20 @@ export class TumblrProvider extends SocialAbstract implements SocialProvider {
     return undefined;
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthTokenDetails> {
+  async refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const credentials = resolveOAuthCredentials(
+      tumblrOAuthCredentialSetup,
+      clientInformation
+    );
     const token = await this.requestToken(
       new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
-        client_id: process.env.TUMBLR_CLIENT_ID!,
-        client_secret: process.env.TUMBLR_CLIENT_SECRET!,
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
       })
     );
 
@@ -263,11 +288,15 @@ export class TumblrProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(6);
     const redirectUri = this.redirectUri();
+    const credentials = resolveOAuthCredentials(
+      tumblrOAuthCredentialSetup,
+      clientInformation
+    );
     const params = new URLSearchParams({
-      client_id: process.env.TUMBLR_CLIENT_ID!,
+      client_id: credentials.client_id,
       response_type: 'code',
       scope: this.scopes.join(' '),
       state,
@@ -281,13 +310,20 @@ export class TumblrProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
-  async authenticate(params: { code: string; codeVerifier: string }) {
+  async authenticate(
+    params: { code: string; codeVerifier: string },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      tumblrOAuthCredentialSetup,
+      clientInformation
+    );
     const token = await this.requestToken(
       new URLSearchParams({
         grant_type: 'authorization_code',
         code: params.code,
-        client_id: process.env.TUMBLR_CLIENT_ID!,
-        client_secret: process.env.TUMBLR_CLIENT_SECRET!,
+        client_id: credentials.client_id,
+        client_secret: credentials.client_secret,
         redirect_uri: this.redirectUri(),
       })
     );

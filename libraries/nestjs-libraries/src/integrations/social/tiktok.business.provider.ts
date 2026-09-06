@@ -1,6 +1,8 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ClientInformation,
+  OAuthCredentialSetup,
   PendingCheckResponse,
   PostDetails,
   PostResponse,
@@ -20,6 +22,22 @@ import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 import { Integration } from '@prisma/client';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 import { Tool } from '@gitroom/nestjs-libraries/integrations/tool.decorator';
+import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+
+const tiktokBusinessOAuthCredentialSetup: OAuthCredentialSetup = {
+  clientIdEnv: ['TIKTOK_BUSINESS_CLIENT_ID'],
+  clientSecretEnv: ['TIKTOK_BUSINESS_CLIENT_SECRET'],
+  clientIdLabel: 'TikTok Business Client ID',
+  clientSecretLabel: 'TikTok Business Client Secret',
+  developerPortalUrl: 'https://business-api.tiktok.com/portal/apps',
+  documentationUrl:
+    'https://business-api.tiktok.com/portal/docs?id=1738373164380162',
+  callbackPath: '/integrations/social/tiktok-business/',
+  help: [
+    'Create a TikTok for Business developer app with Content Posting access.',
+    'The registered redirect URL must include the trailing slash shown below.',
+  ],
+};
 
 @Rules(
   [
@@ -37,6 +55,8 @@ export class TiktokBusinessProvider
 {
   identifier = 'tiktok-business';
   name = 'TikTok';
+  customOAuthCredentials = true;
+  oauthCredentialSetup = tiktokBusinessOAuthCredentialSetup;
   isBetweenSteps = false;
   convertToJPEG = true;
   scopes = [
@@ -196,8 +216,7 @@ export class TiktokBusinessProvider
     if (body.indexOf('reached_active_user_cap') > -1) {
       return {
         type: 'bad-body' as const,
-        value:
-          'TikTok daily user limit reached, please try again tomorrow',
+        value: 'TikTok daily user limit reached, please try again tomorrow',
       };
     }
 
@@ -219,8 +238,7 @@ export class TiktokBusinessProvider
     if (body.indexOf('picture_size_check_failed') > -1) {
       return {
         type: 'bad-body' as const,
-        value:
-          'Video must be at least 360p, Picture must not exceed 1080x1920',
+        value: 'Video must be at least 360p, Picture must not exceed 1080x1920',
       };
     }
 
@@ -294,7 +312,14 @@ export class TiktokBusinessProvider
     };
   }
 
-  async refreshToken(refreshToken: string): Promise<AuthTokenDetails> {
+  async refreshToken(
+    refreshToken: string,
+    clientInformation?: ClientInformation
+  ): Promise<AuthTokenDetails> {
+    const credentials = resolveOAuthCredentials(
+      tiktokBusinessOAuthCredentialSetup,
+      clientInformation
+    );
     const response = await (
       await fetch(`${this.baseUrl}/tt_user/oauth2/refresh_token/`, {
         method: 'POST',
@@ -302,8 +327,8 @@ export class TiktokBusinessProvider
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          client_id: process.env.TIKTOK_BUSINESS_CLIENT_ID!,
-          client_secret: process.env.TIKTOK_BUSINESS_CLIENT_SECRET!,
+          client_id: credentials.client_id,
+          client_secret: credentials.client_secret,
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
         }),
@@ -343,13 +368,17 @@ export class TiktokBusinessProvider
     };
   }
 
-  async generateAuthUrl() {
+  async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = Math.random().toString(36).substring(2);
+    const credentials = resolveOAuthCredentials(
+      tiktokBusinessOAuthCredentialSetup,
+      clientInformation
+    );
 
     return {
       url:
         'https://www.tiktok.com/v2/auth/authorize/' +
-        `?client_key=${process.env.TIKTOK_BUSINESS_CLIENT_ID}` +
+        `?client_key=${encodeURIComponent(credentials.client_id)}` +
         `&redirect_uri=${encodeURIComponent(this.redirectUri())}` +
         `&state=${state}` +
         `&response_type=code` +
@@ -360,11 +389,18 @@ export class TiktokBusinessProvider
     };
   }
 
-  async authenticate(params: {
-    code: string;
-    codeVerifier: string;
-    refresh?: string;
-  }) {
+  async authenticate(
+    params: {
+      code: string;
+      codeVerifier: string;
+      refresh?: string;
+    },
+    clientInformation?: ClientInformation
+  ) {
+    const credentials = resolveOAuthCredentials(
+      tiktokBusinessOAuthCredentialSetup,
+      clientInformation
+    );
     const response = await (
       await fetch(`${this.baseUrl}/tt_user/oauth2/token/`, {
         method: 'POST',
@@ -372,8 +408,8 @@ export class TiktokBusinessProvider
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          client_id: process.env.TIKTOK_BUSINESS_CLIENT_ID!,
-          client_secret: process.env.TIKTOK_BUSINESS_CLIENT_SECRET!,
+          client_id: credentials.client_id,
+          client_secret: credentials.client_secret,
           grant_type: 'authorization_code',
           auth_code: params.code,
           redirect_uri: this.redirectUri(),
@@ -428,7 +464,9 @@ export class TiktokBusinessProvider
     try {
       post = await (
         await this.fetch(
-          `${this.baseUrl}/business/publish/status/?business_id=${encodeURIComponent(
+          `${
+            this.baseUrl
+          }/business/publish/status/?business_id=${encodeURIComponent(
             integration.internalId
           )}&publish_id=${encodeURIComponent(pendingData.publishId)}`,
           {
@@ -460,10 +498,20 @@ export class TiktokBusinessProvider
       const asString = JSON.stringify(post);
       const handleError = this.handleErrors(asString);
       if (handleError?.type === 'refresh-token') {
-        throw new RefreshToken('tiktok-business', asString, '{}', handleError.value);
+        throw new RefreshToken(
+          'tiktok-business',
+          asString,
+          '{}',
+          handleError.value
+        );
       }
       if (handleError?.type === 'disconnect') {
-        throw new Disconnect('tiktok-business', asString, '{}', handleError.value);
+        throw new Disconnect(
+          'tiktok-business',
+          asString,
+          '{}',
+          handleError.value
+        );
       }
       return { status: 'pending', pendingData };
     }
@@ -522,7 +570,10 @@ export class TiktokBusinessProvider
 
   // The Business API is PULL_FROM_URL only: TikTok downloads the media from its
   // URL, there is no FILE_UPLOAD / chunked upload variant of these endpoints.
-  private buildVideoBody(businessId: string, firstPost: PostDetails<TikTokDto>) {
+  private buildVideoBody(
+    businessId: string,
+    firstPost: PostDetails<TikTokDto>
+  ) {
     const isDraft = this.contentPostingMethod(firstPost) === 'UPLOAD';
 
     return {
@@ -800,16 +851,14 @@ export class TiktokBusinessProvider
       },
     ],
   })
-  async musicSearch(
-    accessToken: string,
-    data: { genre?: string },
-    id: string
-  ) {
+  async musicSearch(accessToken: string, data: { genre?: string }, id: string) {
     const music = await (
       await this.fetch(
-        `${this.baseUrl}/discovery/cml/trending_list/?business_id=${encodeURIComponent(
-          id
-        )}${data?.genre ? `&genre=${encodeURIComponent(data.genre)}` : ''}`,
+        `${
+          this.baseUrl
+        }/discovery/cml/trending_list/?business_id=${encodeURIComponent(id)}${
+          data?.genre ? `&genre=${encodeURIComponent(data.genre)}` : ''
+        }`,
         {
           method: 'GET',
           headers: {
@@ -826,7 +875,12 @@ export class TiktokBusinessProvider
       const asString = JSON.stringify(music);
       const handleError = this.handleErrors(asString);
       if (handleError?.type === 'refresh-token') {
-        throw new RefreshToken('tiktok-business', asString, '{}', handleError.value);
+        throw new RefreshToken(
+          'tiktok-business',
+          asString,
+          '{}',
+          handleError.value
+        );
       }
       return [];
     }
@@ -870,7 +924,9 @@ export class TiktokBusinessProvider
 
     const locations = await (
       await this.fetch(
-        `${this.baseUrl}/business/publish/location/?business_id=${encodeURIComponent(
+        `${
+          this.baseUrl
+        }/business/publish/location/?business_id=${encodeURIComponent(
           id
         )}&search_query=${encodeURIComponent(data.q.slice(0, 100))}`,
         {
@@ -887,7 +943,12 @@ export class TiktokBusinessProvider
       const asString = JSON.stringify(locations);
       const handleError = this.handleErrors(asString);
       if (handleError?.type === 'refresh-token') {
-        throw new RefreshToken('tiktok-business', asString, '{}', handleError.value);
+        throw new RefreshToken(
+          'tiktok-business',
+          asString,
+          '{}',
+          handleError.value
+        );
       }
       return [];
     }
@@ -908,9 +969,7 @@ export class TiktokBusinessProvider
       await this.fetch(
         `${this.baseUrl}/business/video/list/?business_id=${encodeURIComponent(
           businessId
-        )}&fields=${encodeURIComponent(
-          JSON.stringify(fields)
-        )}&max_count=20`,
+        )}&fields=${encodeURIComponent(JSON.stringify(fields))}&max_count=20`,
         {
           method: 'GET',
           headers: {
@@ -935,10 +994,20 @@ export class TiktokBusinessProvider
     const asString = JSON.stringify(body);
     const handleError = this.handleErrors(asString);
     if (handleError?.type === 'refresh-token') {
-      throw new RefreshToken('tiktok-business', asString, '{}', handleError.value);
+      throw new RefreshToken(
+        'tiktok-business',
+        asString,
+        '{}',
+        handleError.value
+      );
     }
     if (handleError?.type === 'disconnect') {
-      throw new Disconnect('tiktok-business', asString, '{}', handleError.value);
+      throw new Disconnect(
+        'tiktok-business',
+        asString,
+        '{}',
+        handleError.value
+      );
     }
   }
 
@@ -1112,7 +1181,9 @@ export class TiktokBusinessProvider
     if (postId.indexOf('_pub_url') > -1) {
       const post = await (
         await this.fetch(
-          `${this.baseUrl}/business/publish/status/?business_id=${encodeURIComponent(
+          `${
+            this.baseUrl
+          }/business/publish/status/?business_id=${encodeURIComponent(
             integrationId
           )}&publish_id=${encodeURIComponent(postId)}`,
           {
@@ -1136,10 +1207,18 @@ export class TiktokBusinessProvider
     try {
       const videoQueryData = await (
         await this.fetch(
-          `${this.baseUrl}/business/video/list/?business_id=${encodeURIComponent(
+          `${
+            this.baseUrl
+          }/business/video/list/?business_id=${encodeURIComponent(
             integrationId
           )}&fields=${encodeURIComponent(
-            JSON.stringify(['item_id', 'likes', 'comments', 'shares', 'video_views'])
+            JSON.stringify([
+              'item_id',
+              'likes',
+              'comments',
+              'shares',
+              'video_views',
+            ])
           )}&filters=${encodeURIComponent(
             JSON.stringify({ video_ids: [postId] })
           )}`,
