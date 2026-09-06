@@ -1085,7 +1085,9 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     await this.assertAuthenticatedSession(credentials);
     const media = postDetails.flatMap((item) => item.media || []);
     const video = media.find(
-      (item) => item.type === 'video' || /\.mp4(?:$|\?)/i.test(item.path)
+      (item) =>
+        item.type === 'video' ||
+        /\.(?:mp4|mov|m4v)(?:$|[?#])/i.test(item.path || '')
     );
     const images = media.filter((item) => item !== video);
     const tags =

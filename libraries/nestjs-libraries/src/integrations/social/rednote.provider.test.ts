@@ -68,6 +68,48 @@ test('RedNote publish checks the session before invoking the publish tool', asyn
   assert.deepEqual(calls[1]?.args.images, ['https://example.com/image.jpg']);
 });
 
+test('RedNote publish routes MOV attachments to the video publisher', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'postiz-rednote-video-'));
+  const videoPath = join(directory, 'IMG_4254.MOV');
+
+  try {
+    await writeFile(videoPath, 'video');
+    const provider = new RedNoteProvider();
+    const calls: Array<{
+      name: string;
+      args: Record<string, unknown>;
+    }> = [];
+    (provider as any).callMcpTool = async (
+      _credentials: unknown,
+      name: string,
+      args: Record<string, unknown>
+    ) => {
+      calls.push({ name, args });
+      return name === 'check_login_status' ? '✅ 已登录' : '发布完成';
+    };
+
+    await provider.post(
+      'integration-1',
+      credentials,
+      [
+        {
+          id: 'post-1',
+          message: 'Post body',
+          settings: { title: 'Test title', visibility: '仅自己可见' },
+          media: [{ id: 'media-1', path: videoPath }],
+        },
+      ] as any,
+      {} as any
+    );
+
+    assert.equal(calls[0]?.name, 'check_login_status');
+    assert.equal(calls[1]?.name, 'publish_with_video');
+    assert.match(String(calls[1]?.args.video), /IMG_4254\.MOV$/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('RedNote publish converts an explicit expired-session tool error to a disconnect', async () => {
   const provider = new RedNoteProvider();
   (provider as any).callMcpTool = async () => {

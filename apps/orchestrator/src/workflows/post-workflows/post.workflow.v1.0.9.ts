@@ -527,6 +527,13 @@ export async function postWorkflowV109({
           );
           return false;
         }
+
+        // Publishing is an irreversible mutation. An unclassified provider
+        // error must not fall through to the next loop iteration: the remote
+        // side may have acted before the connection failed, and several
+        // browser-backed providers cannot make a retry idempotent. Only the
+        // explicit refresh-token path above is safe to repeat.
+        return false;
       }
     }
 
