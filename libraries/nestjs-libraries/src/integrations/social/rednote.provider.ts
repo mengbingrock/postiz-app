@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { closeSync, openSync } from 'node:fs';
 import {
   access,
   chmod,
   copyFile,
+  mkdir,
   mkdtemp,
   rm,
   writeFile,
@@ -37,6 +39,7 @@ import {
   RedNoteLoginState,
 } from '@gitroom/nestjs-libraries/integrations/social/rednote.login.agent';
 import { redditAgentProfileRoot } from '@gitroom/nestjs-libraries/integrations/social/reddit.agent.profile';
+import { Agent } from 'undici';
 
 export type RedNoteCredentials = {
   binaryPath: string;
@@ -74,6 +77,14 @@ const SESSION_PREFLIGHT_TIMEOUT_MS = 45_000;
 const SESSION_EXPIRED_MESSAGE =
   'The RedNote session has expired. Reconnect the RedNote channel before publishing.';
 const startingServers = new Map<string, Promise<void>>();
+// MCP tool calls can legitimately run for up to 15 minutes. Node's default
+// five-minute response-header timeout used to mask the browser's real error as
+// UND_ERR_HEADERS_TIMEOUT before the per-account MCP could return it.
+const redNoteMcpDispatcher = new Agent({
+  connectTimeout: 10_000,
+  headersTimeout: 16 * 60_000,
+  bodyTimeout: 16 * 60_000,
+});
 type InteractiveLogin = {
   status: 'idle' | 'running' | 'success' | 'error';
   message: string;
@@ -812,6 +823,8 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         },
         body: JSON.stringify(body),
         signal: controller.signal,
+        // @ts-ignore — undici option, not in lib.dom fetch types
+        dispatcher: redNoteMcpDispatcher,
       });
 
       if (!response.ok) {
@@ -958,17 +971,29 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       }
     }
 
-    const child = spawn(paths.mcpPath, childArgs, {
-      cwd: paths.installDirectory,
-      detached: true,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        COOKIES_PATH: paths.cookiePath,
-        REDDIT_PROFILE_ROOT: redditProfileRoot,
-        REDDIT_HEADLESS: process.env.REDDIT_HEADLESS || 'false',
-      },
-    });
+    const profileRoot = paths.profileDirectory || paths.dataDirectory;
+    const debugDirectory = join(profileRoot, 'debug');
+    const logPath = join(profileRoot, 'mcp.log');
+    await mkdir(debugDirectory, { recursive: true, mode: 0o700 });
+    const logFD = openSync(logPath, 'a', 0o600);
+    await chmod(logPath, 0o600);
+    let child;
+    try {
+      child = spawn(paths.mcpPath, childArgs, {
+        cwd: paths.installDirectory,
+        detached: true,
+        stdio: ['ignore', logFD, logFD],
+        env: {
+          ...process.env,
+          COOKIES_PATH: paths.cookiePath,
+          REDNOTE_DEBUG_DIR: debugDirectory,
+          REDDIT_PROFILE_ROOT: redditProfileRoot,
+          REDDIT_HEADLESS: process.env.REDDIT_HEADLESS || 'false',
+        },
+      });
+    } finally {
+      closeSync(logFD);
+    }
     child.once('error', () => undefined);
     child.unref();
 
