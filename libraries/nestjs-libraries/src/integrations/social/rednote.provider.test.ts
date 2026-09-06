@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RedNoteProvider } from './rednote.provider';
 import { Disconnect } from '../social.abstract';
+import { redNoteBinaryPaths } from './rednote.binary.installer';
 
 const credentials = Buffer.from(
   JSON.stringify({
@@ -169,6 +170,82 @@ test('RedNote resolves only same-origin Postiz upload URLs to local files', asyn
     } else {
       process.env.FRONTEND_URL = previousFrontendUrl;
     }
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('RedNote assigns different persistent cookie profiles and MCP endpoints to different organizations', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'postiz-rednote-profiles-'));
+  const previousConfigDirectory = process.env.POSTIZ_CONFIG_DIR;
+  const previousJwtSecret = process.env.JWT_SECRET;
+  const previousPortMinimum = process.env.XHS_MCP_PROFILE_PORT_MIN;
+  const previousPortMaximum = process.env.XHS_MCP_PROFILE_PORT_MAX;
+
+  try {
+    process.env.POSTIZ_CONFIG_DIR = directory;
+    process.env.JWT_SECRET = 'rednote-profile-test-secret';
+    process.env.XHS_MCP_PROFILE_PORT_MIN = '31000';
+    process.env.XHS_MCP_PROFILE_PORT_MAX = '31010';
+    const provider = new RedNoteProvider();
+
+    const first = await (provider as any).setupIsolatedCredentials(
+      'organization-a'
+    );
+    const second = await (provider as any).setupIsolatedCredentials(
+      'organization-b'
+    );
+    const firstAgain = await (provider as any).setupIsolatedCredentials(
+      'organization-a'
+    );
+
+    assert.notEqual(first.profileId, second.profileId);
+    assert.notEqual(first.mcpEndpoint, second.mcpEndpoint);
+    assert.equal(firstAgain.profileId, first.profileId);
+    assert.equal(firstAgain.mcpEndpoint, first.mcpEndpoint);
+
+    const firstPaths = redNoteBinaryPaths(first.binaryPath, first.profileId);
+    const secondPaths = redNoteBinaryPaths(second.binaryPath, second.profileId);
+    assert.notEqual(firstPaths.cookiePath, secondPaths.cookiePath);
+    assert.match(
+      firstPaths.cookiePath,
+      /profiles[/\\][a-f0-9]{24}[/\\]cookies\.json$/
+    );
+
+    const encoded = Buffer.from(JSON.stringify(first), 'utf8').toString(
+      'base64url'
+    );
+    assert.deepEqual((provider as any).decodeCredentials(encoded), first);
+
+    const tampered = Buffer.from(
+      JSON.stringify({ ...first, mcpEndpoint: second.mcpEndpoint }),
+      'utf8'
+    ).toString('base64url');
+    assert.throws(
+      () => (provider as any).decodeCredentials(tampered),
+      /Invalid RedNote binary configuration/
+    );
+
+    const unsignedScopedEndpoint = Buffer.from(
+      JSON.stringify({
+        binaryPath: first.binaryPath,
+        mcpEndpoint: first.mcpEndpoint,
+        profileName: first.profileName,
+      }),
+      'utf8'
+    ).toString('base64url');
+    assert.throws(
+      () => (provider as any).decodeCredentials(unsignedScopedEndpoint),
+      /Invalid RedNote binary configuration/
+    );
+  } finally {
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    restore('POSTIZ_CONFIG_DIR', previousConfigDirectory);
+    restore('JWT_SECRET', previousJwtSecret);
+    restore('XHS_MCP_PROFILE_PORT_MIN', previousPortMinimum);
+    restore('XHS_MCP_PROFILE_PORT_MAX', previousPortMaximum);
     await rm(directory, { recursive: true, force: true });
   }
 });

@@ -5,6 +5,7 @@ import {
   chmod,
   copyFile,
   mkdir,
+  readFile,
   readdir,
   rename,
   rm,
@@ -42,10 +43,16 @@ export type RedNoteBinaryPaths = {
   loginPath: string;
   mcpPath: string;
   platformLabel: string;
+  profileDirectory?: string;
   releaseTag: string;
 };
 
 const installing = new Map<string, Promise<RedNoteBinaryPaths>>();
+const PROFILE_ID_PATTERN = /^[a-f0-9]{24}$/;
+const PROFILE_PORT_FILE = 'mcp-port';
+const DEFAULT_PROFILE_PORT_MIN = 20_000;
+const DEFAULT_PROFILE_PORT_MAX = 59_999;
+let allocatingProfilePort: Promise<unknown> = Promise.resolve();
 
 export const redNotePlatformAssets = (
   platform = process.platform,
@@ -81,8 +88,12 @@ export const redNotePlatformAssets = (
 };
 
 export const redNoteBinaryPaths = (
-  binaryOverride?: string
+  binaryOverride?: string,
+  profileId?: string
 ): RedNoteBinaryPaths => {
+  if (profileId && !PROFILE_ID_PATTERN.test(profileId)) {
+    throw new Error('Invalid RedNote profile identifier.');
+  }
   const assets = redNotePlatformAssets();
   const releaseTag = process.env.XHS_MCP_VERSION || DEFAULT_REDNOTE_RELEASE;
   const postizConfigDirectory = resolve(
@@ -97,10 +108,16 @@ export const redNoteBinaryPaths = (
       join(defaultDirectory, assets.mcp)
   );
   const installDirectory = dirname(mcpPath);
+  const profileDirectory = profileId
+    ? join(redNoteDataDirectory, 'profiles', profileId)
+    : undefined;
 
   return {
     cookiePath: resolve(
-      process.env.XHS_COOKIES_PATH || join(redNoteDataDirectory, 'cookies.json')
+      profileDirectory
+        ? join(profileDirectory, 'cookies.json')
+        : process.env.XHS_COOKIES_PATH ||
+            join(redNoteDataDirectory, 'cookies.json')
     ),
     dataDirectory: redNoteDataDirectory,
     installDirectory,
@@ -109,8 +126,104 @@ export const redNoteBinaryPaths = (
     ),
     mcpPath,
     platformLabel: assets.label,
+    profileDirectory,
     releaseTag,
   };
+};
+
+const configuredProfilePortRange = () => {
+  const minimum = Number(
+    process.env.XHS_MCP_PROFILE_PORT_MIN || DEFAULT_PROFILE_PORT_MIN
+  );
+  const maximum = Number(
+    process.env.XHS_MCP_PROFILE_PORT_MAX || DEFAULT_PROFILE_PORT_MAX
+  );
+  if (
+    !Number.isInteger(minimum) ||
+    !Number.isInteger(maximum) ||
+    minimum < 1024 ||
+    maximum > 65535 ||
+    maximum < minimum
+  ) {
+    throw new Error(
+      'XHS_MCP_PROFILE_PORT_MIN and XHS_MCP_PROFILE_PORT_MAX must define a valid unprivileged TCP port range.'
+    );
+  }
+  return { minimum, maximum };
+};
+
+const readProfilePort = async (path: string) => {
+  try {
+    const value = Number((await readFile(path, 'utf8')).trim());
+    return Number.isInteger(value) ? value : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
+  }
+};
+
+const allocateRedNoteProfileEndpoint = async (profileId: string) => {
+  const paths = redNoteBinaryPaths(undefined, profileId);
+  const profileDirectory = paths.profileDirectory!;
+  const portPath = join(profileDirectory, PROFILE_PORT_FILE);
+  const { minimum, maximum } = configuredProfilePortRange();
+  const existingPort = await readProfilePort(portPath);
+  if (
+    existingPort !== undefined &&
+    existingPort >= minimum &&
+    existingPort <= maximum
+  ) {
+    return `http://127.0.0.1:${existingPort}/mcp`;
+  }
+
+  const profilesDirectory = dirname(profileDirectory);
+  await mkdir(profilesDirectory, { recursive: true, mode: 0o700 });
+  const assignedPorts = new Set<number>();
+  const profiles = await readdir(profilesDirectory, { withFileTypes: true });
+  await Promise.all(
+    profiles
+      .filter((profile) => profile.isDirectory())
+      .map(async (profile) => {
+        const port = await readProfilePort(
+          join(profilesDirectory, profile.name, PROFILE_PORT_FILE)
+        );
+        if (port !== undefined) {
+          assignedPorts.add(port);
+        }
+      })
+  );
+
+  const portCount = maximum - minimum + 1;
+  const preferredOffset =
+    createHash('sha256').update(profileId).digest().readUInt32BE(0) % portCount;
+  let selectedPort: number | undefined;
+  for (let offset = 0; offset < portCount; offset += 1) {
+    const candidate = minimum + ((preferredOffset + offset) % portCount);
+    if (!assignedPorts.has(candidate)) {
+      selectedPort = candidate;
+      break;
+    }
+  }
+  if (selectedPort === undefined) {
+    throw new Error('No RedNote MCP profile ports are available.');
+  }
+
+  await mkdir(profileDirectory, { recursive: true, mode: 0o700 });
+  await writeFile(portPath, `${selectedPort}\n`, { mode: 0o600 });
+  return `http://127.0.0.1:${selectedPort}/mcp`;
+};
+
+export const redNoteProfileEndpoint = async (profileId: string) => {
+  if (!PROFILE_ID_PATTERN.test(profileId)) {
+    throw new Error('Invalid RedNote profile identifier.');
+  }
+  const allocation = allocatingProfilePort.then(() =>
+    allocateRedNoteProfileEndpoint(profileId)
+  );
+  allocatingProfilePort = allocation.catch(() => undefined);
+  return allocation;
 };
 
 const exists = async (path: string) => {
@@ -303,7 +416,9 @@ const downloadAsset = async (
 const installMissingBinaries = async (paths: RedNoteBinaryPaths) => {
   const assets = redNotePlatformAssets();
   await mkdir(dirname(paths.cookiePath), { recursive: true, mode: 0o700 });
-  await migrateLegacyCookie(paths);
+  if (!paths.profileDirectory) {
+    await migrateLegacyCookie(paths);
+  }
   const [hasMcp, hasLogin] = await Promise.all([
     exists(paths.mcpPath),
     exists(paths.loginPath),
@@ -339,10 +454,11 @@ const installMissingBinaries = async (paths: RedNoteBinaryPaths) => {
 };
 
 export const ensureRedNoteBinaries = async (
-  binaryOverride?: string
+  binaryOverride?: string,
+  profileId?: string
 ): Promise<RedNoteBinaryPaths> => {
-  const paths = redNoteBinaryPaths(binaryOverride);
-  const key = `${paths.mcpPath}\0${paths.loginPath}`;
+  const paths = redNoteBinaryPaths(binaryOverride, profileId);
+  const key = `${paths.mcpPath}\0${paths.loginPath}\0${paths.cookiePath}`;
   const active = installing.get(key);
   if (active) {
     return active;

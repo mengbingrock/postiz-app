@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import {
   access,
   chmod,
@@ -22,16 +23,18 @@ import {
 import { RedNoteDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/rednote.dto';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { Integration } from '@prisma/client';
-import { createHash } from 'node:crypto';
 import {
   ensureRedNoteBinaries,
   redNoteBinaryPaths,
+  redNoteProfileEndpoint,
 } from '@gitroom/nestjs-libraries/integrations/social/rednote.binary.installer';
 
 export type RedNoteCredentials = {
   binaryPath: string;
   mcpEndpoint: string;
+  profileId?: string;
   profileName: string;
+  signature?: string;
 };
 
 type McpEnvelope = {
@@ -92,7 +95,7 @@ type InteractiveLogin = {
   cancelled?: boolean;
 };
 const interactiveLogins = new Map<string, InteractiveLogin>();
-let activeInteractiveLoginKey: string | undefined;
+const PROFILE_ID_PATTERN = /^[a-f0-9]{24}$/;
 
 const QR_CODE_LIFETIME_MS = 4 * 60_000;
 const MAX_QR_CODE_BYTES = 2 * 1024 * 1024;
@@ -155,7 +158,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         bridgeUrl?: string;
       };
 
-      return {
+      const credentials: RedNoteCredentials = {
         // Existing extension-backed channels contain toolPath/bridgeUrl. Falling
         // back here migrates those channels without requiring users to reconnect.
         binaryPath:
@@ -166,13 +169,70 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
           parsed.mcpEndpoint ||
           process.env.XHS_MCP_ENDPOINT ||
           DEFAULT_MCP_ENDPOINT,
+        profileId: parsed.profileId,
         profileName: parsed.profileName || 'RedNote Binary Account',
+        signature: parsed.signature,
       };
+      if (credentials.profileId) {
+        if (!PROFILE_ID_PATTERN.test(credentials.profileId)) {
+          throw new Error('invalid profile');
+        }
+        this.verifyCredentialSignature(credentials);
+      } else {
+        const legacyEndpoint =
+          process.env.XHS_MCP_ENDPOINT || DEFAULT_MCP_ENDPOINT;
+        if (credentials.mcpEndpoint !== legacyEndpoint) {
+          throw new Error('invalid legacy endpoint');
+        }
+      }
+      return credentials;
     } catch {
       throw new Error(
         'Invalid RedNote binary configuration. Reconnect the channel.'
       );
     }
+  }
+
+  private credentialSignature(credentials: {
+    binaryPath: string;
+    mcpEndpoint: string;
+    profileId: string;
+  }) {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is required to isolate RedNote accounts.');
+    }
+    return createHmac('sha256', process.env.JWT_SECRET)
+      .update(
+        `${credentials.profileId}\0${credentials.binaryPath}\0${credentials.mcpEndpoint}`
+      )
+      .digest('base64url');
+  }
+
+  private verifyCredentialSignature(credentials: RedNoteCredentials) {
+    if (!credentials.profileId || !credentials.signature) {
+      throw new Error('missing signature');
+    }
+    const expected = Buffer.from(
+      this.credentialSignature({
+        binaryPath: credentials.binaryPath,
+        mcpEndpoint: credentials.mcpEndpoint,
+        profileId: credentials.profileId,
+      }),
+      'base64url'
+    );
+    const actual = Buffer.from(credentials.signature, 'base64url');
+    if (
+      actual.length !== expected.length ||
+      !timingSafeEqual(actual, expected)
+    ) {
+      throw new Error('invalid signature');
+    }
+  }
+
+  private encodeCredentials(credentials: RedNoteCredentials) {
+    return Buffer.from(JSON.stringify(credentials), 'utf8').toString(
+      'base64url'
+    );
   }
 
   protected setupCredentials(
@@ -200,23 +260,47 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
+  protected async setupIsolatedCredentials(
+    key: string,
+    value?: Partial<RedNoteCredentials>
+  ): Promise<RedNoteCredentials> {
+    const baseCredentials = this.setupCredentials(value);
+
+    const profileId = createHash('sha256')
+      .update(`postiz-rednote-profile-v1\0${key}`)
+      .digest('hex')
+      .slice(0, 24);
+    const mcpEndpoint = await redNoteProfileEndpoint(profileId);
+    this.validateEndpoint(mcpEndpoint);
+
+    const credentials: RedNoteCredentials = {
+      binaryPath: baseCredentials.binaryPath,
+      mcpEndpoint,
+      profileId,
+      profileName: baseCredentials.profileName,
+    };
+    credentials.signature = this.credentialSignature({
+      binaryPath: credentials.binaryPath,
+      mcpEndpoint: credentials.mcpEndpoint,
+      profileId,
+    });
+    return credentials;
+  }
+
   async startInteractiveLogin(
     key: string,
     value?: Partial<RedNoteCredentials>
   ) {
-    if (activeInteractiveLoginKey) {
-      const previous = interactiveLogins.get(activeInteractiveLoginKey);
-      if (previous?.status === 'running') {
-        previous.status = 'error';
-        previous.cancelled = true;
-        previous.message =
-          'This QR code was replaced by a newer RedNote login request.';
-        previous.qrCode = undefined;
-      }
+    const previous = interactiveLogins.get(key);
+    if (previous?.status === 'running') {
+      previous.status = 'error';
+      previous.cancelled = true;
+      previous.message =
+        'This QR code was replaced by a newer RedNote login request.';
+      previous.qrCode = undefined;
     }
-    activeInteractiveLoginKey = key;
 
-    const credentials = this.setupCredentials(value);
+    const credentials = await this.setupIsolatedCredentials(key, value);
     interactiveLogins.set(key, {
       status: 'running',
       message: 'Installing and verifying the RedNote tools if needed…',
@@ -224,16 +308,16 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
 
     let paths;
     try {
-      paths = await ensureRedNoteBinaries(credentials.binaryPath);
+      paths = await ensureRedNoteBinaries(
+        credentials.binaryPath,
+        credentials.profileId
+      );
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
           : 'Unable to install the RedNote tools.';
       interactiveLogins.set(key, { status: 'error', message });
-      if (activeInteractiveLoginKey === key) {
-        activeInteractiveLoginKey = undefined;
-      }
       throw error;
     }
     // Force a fresh sign-in while retaining a recoverable copy if QR creation
@@ -302,9 +386,6 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
           : 'Unable to create the RedNote login QR code.';
       const state: InteractiveLogin = { status: 'error', message };
       interactiveLogins.set(key, state);
-      if (activeInteractiveLoginKey === key) {
-        activeInteractiveLoginKey = undefined;
-      }
       throw error;
     }
   }
@@ -408,9 +489,6 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         if (state.backupCookiePath) {
           await rm(state.backupCookiePath, { force: true });
         }
-        if (activeInteractiveLoginKey === key) {
-          activeInteractiveLoginKey = undefined;
-        }
         return;
       }
 
@@ -465,9 +543,6 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
             () => undefined
           );
         }
-        if (activeInteractiveLoginKey === key) {
-          activeInteractiveLoginKey = undefined;
-        }
       }
     } catch (error) {
       if (state.cancelled || interactiveLogins.get(key) !== state) {
@@ -488,9 +563,6 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         await copyFile(state.backupCookiePath, state.cookiePath).catch(
           () => undefined
         );
-      }
-      if (activeInteractiveLoginKey === key) {
-        activeInteractiveLoginKey = undefined;
       }
     }
   }
@@ -576,8 +648,10 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return this.loginStatusResponse(state);
   }
 
-  async startMcpForSetup(value?: Partial<RedNoteCredentials>) {
-    const credentials = this.setupCredentials(value);
+  async startMcpForSetup(key: string, value?: Partial<RedNoteCredentials>) {
+    const credentials =
+      interactiveLogins.get(key)?.credentials ||
+      (await this.setupIsolatedCredentials(key, value));
     const output = await this.callMcpTool(
       credentials,
       'check_login_status',
@@ -597,6 +671,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       success: true,
       username,
       message: `MCP is running and authenticated as ${username}.`,
+      code: this.encodeCredentials(credentials),
     };
   }
 
@@ -752,7 +827,10 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     if (!isAbsolute(credentials.binaryPath)) {
       throw new Error('RedNote MCP binary path must be absolute.');
     }
-    const paths = await ensureRedNoteBinaries(credentials.binaryPath);
+    const paths = await ensureRedNoteBinaries(
+      credentials.binaryPath,
+      credentials.profileId
+    );
 
     const port = endpoint.port || '80';
     const child = spawn(

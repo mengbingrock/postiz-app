@@ -444,6 +444,7 @@ export class IntegrationsController {
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   async startRedNoteLogin(
     @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User,
     @Body()
     body: {
       binaryPath?: string;
@@ -452,7 +453,10 @@ export class IntegrationsController {
     }
   ) {
     try {
-      return await this.redNoteProvider().startInteractiveLogin(org.id, body);
+      return await this.redNoteProvider().startInteractiveLogin(
+        `${org.id}\0${user.id}`,
+        body
+      );
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error
@@ -465,8 +469,13 @@ export class IntegrationsController {
   @Get('/rednote/login/status')
   @Header('Cache-Control', 'no-store, private')
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
-  async getRedNoteLoginStatus(@GetOrgFromRequest() org: Organization) {
-    return await this.redNoteProvider().getInteractiveLoginStatus(org.id);
+  async getRedNoteLoginStatus(
+    @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User
+  ) {
+    return await this.redNoteProvider().getInteractiveLoginStatus(
+      `${org.id}\0${user.id}`
+    );
   }
 
   @Post('/rednote/login/otp')
@@ -474,11 +483,12 @@ export class IntegrationsController {
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   async submitRedNoteLoginCode(
     @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User,
     @Body() body: { code?: string }
   ) {
     try {
       return await this.redNoteProvider().submitInteractiveLoginCode(
-        org.id,
+        `${org.id}\0${user.id}`,
         typeof body.code === 'string' ? body.code.trim() : ''
       );
     } catch (error) {
@@ -493,6 +503,8 @@ export class IntegrationsController {
   @Post('/rednote/mcp/start')
   @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
   async startRedNoteMcp(
+    @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User,
     @Body()
     body: {
       binaryPath?: string;
@@ -501,7 +513,10 @@ export class IntegrationsController {
     }
   ) {
     try {
-      return await this.redNoteProvider().startMcpForSetup(body);
+      return await this.redNoteProvider().startMcpForSetup(
+        `${org.id}\0${user.id}`,
+        body
+      );
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : 'Unable to start RedNote MCP.'

@@ -19,6 +19,7 @@ type LoginState =
   | 'cancelled';
 
 type SetupResponse = {
+  code?: string;
   status?: SetupStatus;
   message?: string | string[];
   username?: string;
@@ -212,6 +213,11 @@ export const RedNoteConnectionSetup: FC<{
           responseError(startData, 'MCP could not use the saved login cookie.')
         );
       }
+      if (!startData.code) {
+        throw new Error(
+          'Postiz did not return the isolated RedNote connection credential.'
+        );
+      }
 
       const stateResponse = await fetch(
         `/integrations/social/rednote${onboarding ? '?onboarding=true' : ''}`
@@ -226,9 +232,11 @@ export const RedNoteConnectionSetup: FC<{
 
       modals.closeAll();
       gotoUrl(
-        `/integrations/social/rednote?state=${stateData.url}&code=${Buffer.from(
-          JSON.stringify(configuration)
-        ).toString('base64')}${onboarding ? '&onboarding=true' : ''}`
+        `/integrations/social/rednote?state=${encodeURIComponent(
+          stateData.url
+        )}&code=${encodeURIComponent(startData.code)}${
+          onboarding ? '&onboarding=true' : ''
+        }`
       );
     } catch (error) {
       setStatus('error');
