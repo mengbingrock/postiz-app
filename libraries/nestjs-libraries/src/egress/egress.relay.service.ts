@@ -36,6 +36,7 @@ const allowedHost = (host: string) => {
   return (
     normalized === 'chineseinla.com' ||
     normalized.endsWith('.chineseinla.com') ||
+    normalized === 'c3.nychinaren.com' ||
     normalized === 'api.ipify.org'
   );
 };

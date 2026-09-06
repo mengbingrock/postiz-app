@@ -18,6 +18,16 @@ MAX_FRAME_BYTES = 1024 * 1024
 CONNECTOR_LOCK_RETRY_SECONDS = 2
 
 
+def _is_allowed_egress_host(host: str) -> bool:
+    normalized = host.lower().rstrip(".")
+    return (
+        normalized == "chineseinla.com"
+        or normalized.endswith(".chineseinla.com")
+        or normalized == "c3.nychinaren.com"
+        or normalized == "api.ipify.org"
+    )
+
+
 class ConnectorProcessLock:
     """Ensure only one local connector owns a configured device ID."""
 
@@ -155,7 +165,7 @@ class LocalEgressConnector:
         stream_id = int(message.get("streamId", -1))
         host = str(message.get("host", "")).lower().rstrip(".")
         port = int(message.get("port", 0))
-        allowed = host == "chineseinla.com" or host.endswith(".chineseinla.com") or host == "api.ipify.org"
+        allowed = _is_allowed_egress_host(host)
         if stream_id < 1 or not allowed or port != 443:
             await self._send_control("error", streamId=stream_id, message="Destination is not allowed")
             return

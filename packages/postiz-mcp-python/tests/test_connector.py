@@ -5,7 +5,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from postiz_mcp.config import Settings
-from postiz_mcp.connector import ConnectorProcessLock, LocalEgressConnector
+from postiz_mcp.connector import (
+    ConnectorProcessLock,
+    LocalEgressConnector,
+    _is_allowed_egress_host,
+)
 
 
 class ClosedSocket:
@@ -22,6 +26,13 @@ class Writer:
 
 
 class ConnectorTest(unittest.IsolatedAsyncioTestCase):
+    async def test_chineseinla_static_cdn_is_allowed_without_open_proxy_wildcards(self):
+        self.assertTrue(_is_allowed_egress_host("c3.nychinaren.com"))
+        self.assertTrue(_is_allowed_egress_host("C3.NYCHINAREN.COM."))
+        self.assertFalse(_is_allowed_egress_host("nychinaren.com"))
+        self.assertFalse(_is_allowed_egress_host("evil.nychinaren.com"))
+        self.assertFalse(_is_allowed_egress_host("c3.nychinaren.com.example.org"))
+
     async def test_only_one_process_can_own_a_device_connector(self):
         settings = Settings("https://post.example.com/api/mcp", "secret", "test-device")
         with tempfile.TemporaryDirectory() as directory, patch(
