@@ -44,17 +44,6 @@ const nextConfig = {
       },
     ];
   },
-  async rewrites() {
-    return [
-      {
-        source: '/uploads/:path*',
-        destination:
-          process.env.STORAGE_PROVIDER === 'local'
-            ? '/api/uploads/:path*'
-            : '/404',
-      },
-    ];
-  },
 };
 
 export default withSentryConfig(nextConfig, {
