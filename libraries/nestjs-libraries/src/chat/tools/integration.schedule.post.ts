@@ -16,6 +16,8 @@ import {
   chineseInLAProxyConfigured,
   EgressRelayService,
 } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
+import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import { socialIntegrationList } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 
 const validUrlExtension = new ValidUrlExtension();
 const validUrlPath = new ValidUrlPath();
@@ -270,10 +272,27 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
             // Renew the lease immediately before Temporal is asked to publish.
             // Preparation may have happened several minutes earlier while the
             // user reviewed the screenshot.
-            await this._egressRelayService.ensureChineseInLALease(
-              organizationId,
-              undefined,
-              10
+            const egress =
+              await this._egressRelayService.ensureChineseInLALease(
+                organizationId,
+                undefined,
+                10
+              );
+            const proxyUrl = egress.lease?.proxyUrl;
+            if (!proxyUrl) {
+              throw new Error(
+                'Postiz did not allocate a tenant-specific ChineseInLA proxy.'
+              );
+            }
+            const chineseInLAProvider = socialIntegrationList.find(
+              (provider) => provider.identifier === 'chineseinla'
+            ) as ChineseInLAProvider | undefined;
+            if (!chineseInLAProvider) {
+              throw new Error('ChineseInLA provider is unavailable.');
+            }
+            await chineseInLAProvider.configureEgress(
+              integration.token,
+              proxyUrl
             );
           }
 

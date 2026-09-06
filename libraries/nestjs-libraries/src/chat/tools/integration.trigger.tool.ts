@@ -15,6 +15,7 @@ import {
   chineseInLAProxyConfigured,
   EgressRelayService,
 } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
+import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
 
 @Injectable()
 export class IntegrationTriggerTool implements AgentToolInterface {
@@ -114,10 +115,21 @@ export class IntegrationTriggerTool implements AgentToolInterface {
               getIntegration.providerIdentifier === 'chineseinla' &&
               chineseInLAProxyConfigured()
             ) {
-              await this._egressRelayService.ensureChineseInLALease(
-                organizationId,
-                undefined,
-                10
+              const egress =
+                await this._egressRelayService.ensureChineseInLALease(
+                  organizationId,
+                  undefined,
+                  10
+                );
+              const proxyUrl = egress.lease?.proxyUrl;
+              if (!proxyUrl) {
+                throw new Error(
+                  'Postiz did not allocate a tenant-specific ChineseInLA proxy.'
+                );
+              }
+              await (integrationProvider as ChineseInLAProvider).configureEgress(
+                getIntegration.token,
+                proxyUrl
               );
             }
             // @ts-ignore

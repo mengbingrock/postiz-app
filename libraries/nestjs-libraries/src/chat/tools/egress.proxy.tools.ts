@@ -67,7 +67,7 @@ export class EgressProxyStartTool implements AgentToolInterface {
       }),
       outputSchema: z.object({ output: z.any() }),
       execute: async (inputData, context) => ({
-        output: this.relay.startLease(
+        output: await this.relay.startLease(
           organizationId(inputData, context),
           inputData.deviceId,
           inputData.ttlMinutes

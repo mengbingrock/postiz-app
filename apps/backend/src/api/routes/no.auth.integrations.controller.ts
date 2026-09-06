@@ -24,7 +24,11 @@ import {
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { OrganizationService } from '@gitroom/nestjs-libraries/database/prisma/organizations/organization.service';
 import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
-import { EgressRelayService } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
+import {
+  chineseInLAProxyConfigured,
+  EgressRelayService,
+} from '@gitroom/nestjs-libraries/egress/egress.relay.service';
+import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -129,15 +133,34 @@ export class NoAuthIntegrationsController {
             },
             details ? JSON.parse(details) : undefined
           );
-        const auth =
-          integration === 'chineseinla'
-            ? await this._egressRelayService.withChineseInLALease(
-                org.id,
-                authenticate,
-                undefined,
-                10
-              )
-            : await authenticate();
+        let auth;
+        if (integration === 'chineseinla' && chineseInLAProxyConfigured()) {
+          const egress =
+            await this._egressRelayService.ensureChineseInLALease(
+              org.id,
+              undefined,
+              10
+            );
+          try {
+            const proxyUrl = egress.lease?.proxyUrl;
+            if (!proxyUrl) {
+              throw new Error(
+                'Postiz did not allocate a tenant-specific ChineseInLA proxy.'
+              );
+            }
+            await (
+              integrationProvider as ChineseInLAProvider
+            ).configureEgress(body.code, proxyUrl);
+            auth = await authenticate();
+          } finally {
+            this._egressRelayService.stopLease(
+              org.id,
+              'chineseinla_operation_finished'
+            );
+          }
+        } else {
+          auth = await authenticate();
+        }
 
         if (typeof auth === 'string') {
           return res({

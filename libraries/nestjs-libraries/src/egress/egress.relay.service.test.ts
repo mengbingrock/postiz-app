@@ -65,9 +65,9 @@ test('ChineseInLA local egress is required only when a proxy is configured', () 
 test('ChineseInLA lease starts before the login-page probe', async () => {
   const relay = new EgressRelayService();
   const events: string[] = [];
-  relay.startLease = (organizationId, deviceId, ttlMinutes) => {
+  relay.startLease = async (organizationId, deviceId, ttlMinutes) => {
     events.push(`start:${organizationId}:${deviceId}:${ttlMinutes}`);
-    return {} as ReturnType<EgressRelayService['status']>;
+    return {} as Awaited<ReturnType<EgressRelayService['startLease']>>;
   };
   relay.status = (organizationId) => {
     events.push(`status:${organizationId}`);
@@ -83,8 +83,12 @@ test('ChineseInLA lease starts before the login-page probe', async () => {
       },
     };
   };
-  (relay as any).httpsGetThroughProxy = async (host: string, path: string) => {
-    events.push(`probe:${host}:${path}`);
+  (relay as any).httpsGetThroughProxy = async (
+    organizationId: string,
+    host: string,
+    path: string
+  ) => {
+    events.push(`probe:${organizationId}:${host}:${path}`);
     return '<input name="username"><input name="password">';
   };
 
@@ -93,7 +97,7 @@ test('ChineseInLA lease starts before the login-page probe', async () => {
   assert.equal(result.ok, true);
   assert.deepEqual(events, [
     'start:org:mac:10',
-    'probe:www.chineseinla.com:/f/page_login.html',
+    'probe:org:www.chineseinla.com:/f/page_login.html',
     'status:org',
   ]);
 });
@@ -101,7 +105,8 @@ test('ChineseInLA lease starts before the login-page probe', async () => {
 test('ChineseInLA lease is stopped when its probe fails', async () => {
   const relay = new EgressRelayService();
   const events: string[] = [];
-  relay.startLease = () => ({}) as ReturnType<EgressRelayService['status']>;
+  relay.startLease = async () =>
+    ({}) as Awaited<ReturnType<EgressRelayService['startLease']>>;
   relay.stopLease = (organizationId, reason) => {
     events.push(`stop:${organizationId}:${reason}`);
     return {
@@ -118,6 +123,72 @@ test('ChineseInLA lease is stopped when its probe fails', async () => {
     /could not reach the ChineseInLA login page/
   );
   assert.deepEqual(events, ['stop:org:chineseinla_probe_failed']);
+});
+
+test('organization leases coexist on isolated proxy ports', () => {
+  const relay = new EgressRelayService();
+  const future = new Date(Date.now() + 60_000);
+  const leases = (relay as any).activeLeases as Map<string, any>;
+  leases.set('org-a', {
+    id: 'lease-a',
+    organizationId: 'org-a',
+    deviceId: 'mac-a',
+    proxyPort: 31001,
+    createdAt: new Date(),
+    expiresAt: future,
+    timer: setTimeout(() => undefined, 60_000),
+  });
+  leases.set('org-b', {
+    id: 'lease-b',
+    organizationId: 'org-b',
+    deviceId: 'mac-b',
+    proxyPort: 31002,
+    createdAt: new Date(),
+    expiresAt: future,
+    timer: setTimeout(() => undefined, 60_000),
+  });
+
+  assert.equal(relay.status('org-a').lease?.proxyUrl, 'http://127.0.0.1:31001');
+  assert.equal(relay.status('org-b').lease?.proxyUrl, 'http://127.0.0.1:31002');
+  relay.stopLease('org-a');
+  assert.equal(relay.status('org-a').lease, null);
+  assert.equal(relay.status('org-b').lease?.id, 'lease-b');
+  relay.stopLease('org-b');
+});
+
+test('renewing an organization lease does not interrupt active streams', async () => {
+  const relay = new EgressRelayService();
+  const sent: string[] = [];
+  const destroyed: string[] = [];
+  const socket = {
+    readyState: 1,
+    send: (message: string) => sent.push(message),
+  };
+  const stream = { destroy: () => destroyed.push('destroyed') };
+  (relay as any).connectors.set(
+    'org',
+    new Map([
+      [
+        'mac',
+        {
+          organizationId: 'org',
+          deviceId: 'mac',
+          socket,
+          connectedAt: new Date(),
+          streams: new Map([[1, stream]]),
+        },
+      ],
+    ])
+  );
+  (relay as any).proxyEndpoints.set('org', { port: 31001, server: {} });
+
+  const first = await relay.startLease('org', 'mac', 5);
+  const renewed = await relay.startLease('org', 'mac', 10);
+
+  assert.equal(renewed.lease?.id, first.lease?.id);
+  assert.equal(destroyed.length, 0);
+  assert.equal(sent.length, 2);
+  relay.stopLease('org');
 });
 
 test('ChineseInLA lease remains active until the wrapped operation finishes', async () => {

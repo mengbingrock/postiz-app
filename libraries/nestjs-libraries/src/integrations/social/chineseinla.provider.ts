@@ -241,13 +241,51 @@ export class ChineseInLAProvider
     return `data:${mimeType};base64,${base64}`;
   }
 
+  private async configureCredentialsEgress(
+    credentials: RedNoteCredentials,
+    proxyUrl: string
+  ) {
+    const parsed = new URL(proxyUrl);
+    if (
+      parsed.protocol !== 'http:' ||
+      parsed.hostname !== '127.0.0.1' ||
+      !parsed.port ||
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== '/' ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      throw new Error(
+        'Postiz returned an invalid tenant-specific ChineseInLA proxy URL.'
+      );
+    }
+    await this.callMcpTool(
+      credentials,
+      'chineseinla_set_proxy',
+      { proxy_url: proxyUrl },
+      30_000
+    );
+  }
+
+  async configureEgress(accessToken: string, proxyUrl: string) {
+    await this.configureCredentialsEgress(
+      this.decodeCredentials(accessToken),
+      proxyUrl
+    );
+  }
+
   async loginWithPassword(
     key: string,
     value: Partial<RedNoteCredentials> | undefined,
     username: string,
-    password: string
+    password: string,
+    proxyUrl?: string
   ) {
     const credentials = await this.setupIsolatedCredentials(key, value);
+    if (proxyUrl) {
+      await this.configureCredentialsEgress(credentials, proxyUrl);
+    }
     try {
       const existingLogin = this.parseJson<ChineseInLALoginStatus>(
         await this.callMcpTool(

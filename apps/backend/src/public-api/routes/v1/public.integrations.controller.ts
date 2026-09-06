@@ -69,6 +69,11 @@ import { SuperAdminGuard } from '@gitroom/backend/services/auth/super.admin.guar
 import { timer } from '@gitroom/helpers/utils/timer';
 import { ioRedis } from '@gitroom/nestjs-libraries/redis/redis.service';
 import { createAndUploadVideoThumbnail } from '@gitroom/nestjs-libraries/upload/video.thumbnail';
+import {
+  chineseInLAProxyConfigured,
+  EgressRelayService,
+} from '@gitroom/nestjs-libraries/egress/egress.relay.service';
+import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
 
 @ApiTags('Public API')
 @Controller('/public/v1')
@@ -82,7 +87,8 @@ export class PublicIntegrationsController {
     private _notificationService: NotificationService,
     private _integrationManager: IntegrationManager,
     private _refreshIntegrationService: RefreshIntegrationService,
-    private _usersService: UsersService
+    private _usersService: UsersService,
+    private _egressRelayService: EgressRelayService
   ) {}
 
   @Post('/upload')
@@ -611,6 +617,27 @@ export class PublicIntegrationsController {
 
     while (true) {
       try {
+        if (
+          getIntegration.providerIdentifier === 'chineseinla' &&
+          chineseInLAProxyConfigured()
+        ) {
+          const egress =
+            await this._egressRelayService.ensureChineseInLALease(
+              org.id,
+              undefined,
+              10
+            );
+          const proxyUrl = egress.lease?.proxyUrl;
+          if (!proxyUrl) {
+            throw new Error(
+              'Postiz did not allocate a tenant-specific ChineseInLA proxy.'
+            );
+          }
+          await (integrationProvider as ChineseInLAProvider).configureEgress(
+            getIntegration.token,
+            proxyUrl
+          );
+        }
         // @ts-ignore
         const result = await integrationProvider[body.methodName](
           getIntegration.token,

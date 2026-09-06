@@ -16,9 +16,15 @@ type Lease = {
   id: string;
   organizationId: string;
   deviceId: string;
+  proxyPort: number;
   createdAt: Date;
   expiresAt: Date;
   timer: NodeJS.Timeout;
+};
+
+type ProxyEndpoint = {
+  port: number;
+  server: net.Server;
 };
 
 const MAX_HEADER_BYTES = 16 * 1024;
@@ -50,7 +56,12 @@ export class EgressRelayService implements OnModuleDestroy {
     process.env.POSTIZ_EGRESS_PROXY_PORT || DEFAULT_PROXY_PORT
   );
   private proxyServer?: net.Server;
-  private activeLease?: Lease;
+  private readonly proxyEndpoints = new Map<string, ProxyEndpoint>();
+  private readonly startingProxyEndpoints = new Map<
+    string,
+    Promise<ProxyEndpoint>
+  >();
+  private readonly activeLeases = new Map<string, Lease>();
   private nextStreamId = 1;
 
   startProxyServer() {
@@ -65,6 +76,9 @@ export class EgressRelayService implements OnModuleDestroy {
       );
     }
 
+    // Keep the configured port as a compatibility endpoint during rollout.
+    // Tenant-aware browsers receive a dedicated loopback port from startLease.
+    // The compatibility endpoint is usable only when exactly one lease exists.
     this.proxyServer = net.createServer((socket) =>
       this.acceptProxySocket(socket)
     );
@@ -112,37 +126,50 @@ export class EgressRelayService implements OnModuleDestroy {
     this.logger.log(`Egress connector online: ${organizationId}/${deviceId}`);
   }
 
-  startLease(
+  async startLease(
     organizationId: string,
     requestedDeviceId?: string,
     ttlMinutes = 30
   ) {
-    this.expireLeaseIfNeeded();
+    this.expireLeaseIfNeeded(organizationId);
     const devices = this.connectors.get(organizationId);
+    const currentLease = this.activeLeases.get(organizationId);
     const connector = requestedDeviceId
       ? devices?.get(requestedDeviceId)
+      : currentLease
+      ? devices?.get(currentLease.deviceId)
       : devices?.values().next().value;
     if (!connector || connector.socket.readyState !== WebSocket.OPEN) {
       throw new Error(
         'No online local Postiz MCP connector is available for this organization.'
       );
     }
-    if (
-      this.activeLease &&
-      this.activeLease.organizationId !== organizationId
-    ) {
-      throw new Error(
-        'The server egress proxy is currently leased by another organization.'
-      );
-    }
-
     const boundedTTL = Math.min(60, Math.max(5, Math.floor(ttlMinutes || 30)));
-    if (this.activeLease) this.stopLease(organizationId, 'renewed');
     const expiresAt = new Date(Date.now() + boundedTTL * 60_000);
+    if (currentLease?.deviceId === connector.deviceId) {
+      clearTimeout(currentLease.timer);
+      currentLease.expiresAt = expiresAt;
+      currentLease.timer = setTimeout(
+        () => this.stopLease(organizationId, 'expired'),
+        boundedTTL * 60_000
+      );
+      connector.socket.send(
+        JSON.stringify({
+          type: 'lease_start',
+          leaseId: currentLease.id,
+          expiresAt: expiresAt.toISOString(),
+        })
+      );
+      return this.status(organizationId);
+    }
+    if (currentLease)
+      this.stopLease(organizationId, 'renewed');
+    const endpoint = await this.ensureProxyEndpoint(organizationId);
     const lease: Lease = {
       id: randomUUID(),
       organizationId,
       deviceId: connector.deviceId,
+      proxyPort: endpoint.port,
       createdAt: new Date(),
       expiresAt,
       timer: setTimeout(
@@ -150,7 +177,7 @@ export class EgressRelayService implements OnModuleDestroy {
         boundedTTL * 60_000
       ),
     };
-    this.activeLease = lease;
+    this.activeLeases.set(organizationId, lease);
     connector.socket.send(
       JSON.stringify({
         type: 'lease_start',
@@ -162,15 +189,12 @@ export class EgressRelayService implements OnModuleDestroy {
   }
 
   stopLease(organizationId: string, reason = 'stopped') {
-    if (
-      !this.activeLease ||
-      this.activeLease.organizationId !== organizationId
-    ) {
+    const lease = this.activeLeases.get(organizationId);
+    if (!lease) {
       return this.status(organizationId);
     }
-    const lease = this.activeLease;
     clearTimeout(lease.timer);
-    this.activeLease = undefined;
+    this.activeLeases.delete(organizationId);
     const connector = this.connectors.get(organizationId)?.get(lease.deviceId);
     if (connector?.socket.readyState === WebSocket.OPEN) {
       connector.socket.send(
@@ -183,34 +207,38 @@ export class EgressRelayService implements OnModuleDestroy {
   }
 
   status(organizationId: string) {
-    this.expireLeaseIfNeeded();
+    this.expireLeaseIfNeeded(organizationId);
     const devices = [...(this.connectors.get(organizationId)?.values() || [])]
       .filter((connector) => connector.socket.readyState === WebSocket.OPEN)
       .map((connector) => ({
         deviceId: connector.deviceId,
         connectedAt: connector.connectedAt.toISOString(),
       }));
-    const lease =
-      this.activeLease?.organizationId === organizationId
-        ? {
-            id: this.activeLease.id,
-            deviceId: this.activeLease.deviceId,
-            createdAt: this.activeLease.createdAt.toISOString(),
-            expiresAt: this.activeLease.expiresAt.toISOString(),
-            proxyUrl: `http://127.0.0.1:${this.proxyPort}`,
-          }
-        : null;
+    const activeLease = this.activeLeases.get(organizationId);
+    const lease = activeLease
+      ? {
+          id: activeLease.id,
+          deviceId: activeLease.deviceId,
+          createdAt: activeLease.createdAt.toISOString(),
+          expiresAt: activeLease.expiresAt.toISOString(),
+          proxyUrl: `http://127.0.0.1:${activeLease.proxyPort}`,
+        }
+      : null;
     return { connectorOnline: devices.length > 0, devices, lease };
   }
 
   async testLease(organizationId: string) {
-    if (
-      !this.activeLease ||
-      this.activeLease.organizationId !== organizationId
-    ) {
+    const lease = this.activeLeases.get(organizationId);
+    if (!lease) {
       throw new Error('Start an egress proxy lease before testing it.');
     }
-    const ip = (await this.httpsGetThroughProxy('api.ipify.org', '/')).trim();
+    const ip = (
+      await this.httpsGetThroughProxy(
+        organizationId,
+        'api.ipify.org',
+        '/'
+      )
+    ).trim();
     if (!net.isIP(ip))
       throw new Error(
         'The local egress connector returned an invalid public IP.'
@@ -218,7 +246,7 @@ export class EgressRelayService implements OnModuleDestroy {
     return {
       ok: true,
       egressIp: ip,
-      proxyUrl: `http://127.0.0.1:${this.proxyPort}`,
+      proxyUrl: `http://127.0.0.1:${lease.proxyPort}`,
     };
   }
 
@@ -227,9 +255,10 @@ export class EgressRelayService implements OnModuleDestroy {
     requestedDeviceId?: string,
     ttlMinutes = 10
   ) {
-    this.startLease(organizationId, requestedDeviceId, ttlMinutes);
+    await this.startLease(organizationId, requestedDeviceId, ttlMinutes);
     try {
       const html = await this.httpsGetThroughProxy(
+        organizationId,
         'www.chineseinla.com',
         '/f/page_login.html'
       );
@@ -268,20 +297,25 @@ export class EgressRelayService implements OnModuleDestroy {
   }
 
   onModuleDestroy() {
-    if (this.activeLease) clearTimeout(this.activeLease.timer);
+    for (const lease of this.activeLeases.values()) clearTimeout(lease.timer);
     for (const devices of this.connectors.values()) {
       for (const connector of devices.values())
         connector.socket.close(1001, 'Backend shutting down');
     }
     this.proxyServer?.close();
+    for (const endpoint of this.proxyEndpoints.values()) endpoint.server.close();
   }
 
-  private expireLeaseIfNeeded() {
-    if (
-      this.activeLease &&
-      this.activeLease.expiresAt.getTime() <= Date.now()
-    ) {
-      this.stopLease(this.activeLease.organizationId, 'expired');
+  private expireLeaseIfNeeded(organizationId?: string) {
+    const leases = organizationId
+      ? [this.activeLeases.get(organizationId)].filter(
+          (lease): lease is Lease => Boolean(lease)
+        )
+      : [...this.activeLeases.values()];
+    for (const lease of leases) {
+      if (lease.expiresAt.getTime() <= Date.now()) {
+        this.stopLease(lease.organizationId, 'expired');
+      }
     }
   }
 
@@ -292,10 +326,8 @@ export class EgressRelayService implements OnModuleDestroy {
     if (devices?.get(connector.deviceId) === connector)
       devices.delete(connector.deviceId);
     if (devices?.size === 0) this.connectors.delete(connector.organizationId);
-    if (
-      this.activeLease?.organizationId === connector.organizationId &&
-      this.activeLease.deviceId === connector.deviceId
-    ) {
+    const lease = this.activeLeases.get(connector.organizationId);
+    if (lease?.deviceId === connector.deviceId) {
       this.stopLease(connector.organizationId, 'connector_disconnected');
     }
     this.logger.log(
@@ -339,7 +371,52 @@ export class EgressRelayService implements OnModuleDestroy {
     }
   }
 
-  private acceptProxySocket(socket: net.Socket) {
+  private async ensureProxyEndpoint(organizationId: string) {
+    const existing = this.proxyEndpoints.get(organizationId);
+    if (existing) return existing;
+    const pending = this.startingProxyEndpoints.get(organizationId);
+    if (pending) return pending;
+
+    const starting = new Promise<ProxyEndpoint>((resolve, reject) => {
+      const server = net.createServer((socket) =>
+        this.acceptProxySocket(socket, organizationId)
+      );
+      const fail = (error: Error) => {
+        server.close();
+        reject(error);
+      };
+      server.once('error', fail);
+      server.listen(0, '127.0.0.1', () => {
+        server.off('error', fail);
+        server.on('error', (error) =>
+          this.logger.error(
+            `Organization egress proxy ${organizationId} failed: ${error.message}`
+          )
+        );
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          fail(new Error('Unable to allocate an organization proxy port.'));
+          return;
+        }
+        const endpoint = { port: address.port, server };
+        this.proxyEndpoints.set(organizationId, endpoint);
+        this.logger.log(
+          `Organization egress proxy ready: ${organizationId} on 127.0.0.1:${endpoint.port}`
+        );
+        resolve(endpoint);
+      });
+    });
+    this.startingProxyEndpoints.set(organizationId, starting);
+    try {
+      return await starting;
+    } finally {
+      if (this.startingProxyEndpoints.get(organizationId) === starting) {
+        this.startingProxyEndpoints.delete(organizationId);
+      }
+    }
+  }
+
+  private acceptProxySocket(socket: net.Socket, organizationId?: string) {
     socket.setTimeout(20_000, () => socket.destroy());
     let header = Buffer.alloc(0);
     const readHeader = (chunk: Buffer) => {
@@ -364,19 +441,33 @@ export class EgressRelayService implements OnModuleDestroy {
         socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
         return;
       }
-      this.openStream(socket, host, port, header.subarray(boundary + 4));
+      this.openStream(
+        socket,
+        organizationId,
+        host,
+        port,
+        header.subarray(boundary + 4)
+      );
     };
     socket.on('data', readHeader);
   }
 
   private openStream(
     socket: net.Socket,
+    organizationId: string | undefined,
     host: string,
     port: number,
     initialData: Buffer
   ) {
-    this.expireLeaseIfNeeded();
-    const lease = this.activeLease;
+    this.expireLeaseIfNeeded(organizationId);
+    // The fixed legacy endpoint cannot safely select between tenants. It is
+    // retained only for one-lease rolling upgrades; all newly configured
+    // ChineseInLA browsers use an organization-specific endpoint.
+    const lease = organizationId
+      ? this.activeLeases.get(organizationId)
+      : this.activeLeases.size === 1
+      ? this.activeLeases.values().next().value
+      : undefined;
     const connector = lease
       ? this.connectors.get(lease.organizationId)?.get(lease.deviceId)
       : undefined;
@@ -447,9 +538,18 @@ export class EgressRelayService implements OnModuleDestroy {
     );
   }
 
-  private httpsGetThroughProxy(host: string, path: string) {
+  private httpsGetThroughProxy(
+    organizationId: string,
+    host: string,
+    path: string
+  ) {
     return new Promise<string>((resolve, reject) => {
-      const socket = net.connect(this.proxyPort, '127.0.0.1');
+      const endpoint = this.proxyEndpoints.get(organizationId);
+      if (!endpoint) {
+        reject(new Error('Organization egress proxy is not initialized.'));
+        return;
+      }
+      const socket = net.connect(endpoint.port, '127.0.0.1');
       let proxyHeader = Buffer.alloc(0);
       const fail = (error: Error) => {
         socket.destroy();

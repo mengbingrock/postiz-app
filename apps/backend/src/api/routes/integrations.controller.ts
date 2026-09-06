@@ -102,6 +102,26 @@ export class IntegrationsController {
     ) as ChineseInLAProvider;
   }
 
+  private async configureChineseInLAEgress(
+    organizationId: string,
+    accessToken: string,
+    deviceId?: string
+  ) {
+    if (!chineseInLAProxyConfigured()) return;
+    const status = await this._egressRelayService.ensureChineseInLALease(
+      organizationId,
+      deviceId,
+      10
+    );
+    const proxyUrl = status.lease?.proxyUrl;
+    if (!proxyUrl) {
+      throw new Error(
+        'Postiz did not allocate a tenant-specific ChineseInLA proxy.'
+      );
+    }
+    await this.chineseInLAProvider().configureEgress(accessToken, proxyUrl);
+  }
+
   private redditAgentProvider() {
     return this._integrationManager.getSocialIntegration(
       'reddit-agent'
@@ -295,10 +315,9 @@ export class IntegrationsController {
         integration.providerIdentifier === 'chineseinla' &&
         chineseInLAProxyConfigured()
       ) {
-        await this._egressRelayService.ensureChineseInLALease(
+        await this.configureChineseInLAEgress(
           integration.organizationId,
-          undefined,
-          10
+          integration.token
         );
       }
       if (existingTokenProbeProviders.has(integration.providerIdentifier)) {
@@ -537,13 +556,19 @@ export class IntegrationsController {
     }
 
     try {
-      await this._egressRelayService.ensureChineseInLALease(
+      const egress = await this._egressRelayService.ensureChineseInLALease(
         org.id,
         typeof body.deviceId === 'string' && body.deviceId.trim()
           ? body.deviceId.trim()
           : undefined,
         10
       );
+      const proxyUrl = egress.lease?.proxyUrl;
+      if (!proxyUrl) {
+        throw new Error(
+          'Postiz did not allocate a tenant-specific ChineseInLA proxy.'
+        );
+      }
       return await this.chineseInLAProvider().loginWithPassword(
         `${org.id}\0${user.id}`,
         {
@@ -552,7 +577,8 @@ export class IntegrationsController {
           profileName: username,
         },
         username,
-        password
+        password,
+        proxyUrl
       );
     } catch (error) {
       throw new BadRequestException(
@@ -590,6 +616,7 @@ export class IntegrationsController {
   ) {
     const integration = await this.connectedChineseInLA(org.id, integrationId);
     try {
+      await this.configureChineseInLAEgress(org.id, integration.token);
       return {
         forums: await this.chineseInLAProvider().listForums(integration.token),
       };
@@ -631,6 +658,7 @@ export class IntegrationsController {
       body.integrationId
     );
     try {
+      await this.configureChineseInLAEgress(org.id, integration.token);
       return await this.chineseInLAProvider().preparePost(
         integration.token,
         body.settings as any,
@@ -1196,10 +1224,9 @@ export class IntegrationsController {
           getIntegration.providerIdentifier === 'chineseinla' &&
           chineseInLAProxyConfigured()
         ) {
-          await this._egressRelayService.ensureChineseInLALease(
+          await this.configureChineseInLAEgress(
             org.id,
-            undefined,
-            10
+            getIntegration.token
           );
         }
         // @ts-ignore
