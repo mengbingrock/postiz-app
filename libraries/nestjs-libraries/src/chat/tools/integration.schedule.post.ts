@@ -12,6 +12,10 @@ import {
   ValidUrlExtension,
   ValidUrlPath,
 } from '@gitroom/helpers/utils/valid.url.path';
+import {
+  chineseInLAProxyConfigured,
+  EgressRelayService,
+} from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 
 const validUrlExtension = new ValidUrlExtension();
 const validUrlPath = new ValidUrlPath();
@@ -31,7 +35,8 @@ const attachmentUrl = z
 export class IntegrationSchedulePostTool implements AgentToolInterface {
   constructor(
     private _postsService: PostsService,
-    private _integrationService: IntegrationService
+    private _integrationService: IntegrationService,
+    private _egressRelayService: EgressRelayService
   ) {}
   name = 'integrationSchedulePostTool';
 
@@ -255,6 +260,21 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
 
           if (!integration) {
             throw new Error('Integration not found');
+          }
+
+          if (
+            post.type === 'now' &&
+            integration.providerIdentifier === 'chineseinla' &&
+            chineseInLAProxyConfigured()
+          ) {
+            // Renew the lease immediately before Temporal is asked to publish.
+            // Preparation may have happened several minutes earlier while the
+            // user reviewed the screenshot.
+            await this._egressRelayService.ensureChineseInLALease(
+              organizationId,
+              undefined,
+              10
+            );
           }
 
           const output = await this._postsService.createPost(organizationId, {

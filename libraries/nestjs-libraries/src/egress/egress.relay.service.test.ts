@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   allowedHost,
+  chineseInLAProxyConfigured,
   EgressRelayService,
   validChineseInLALoginDocument,
 } from './egress.relay.service';
@@ -49,6 +50,15 @@ test('ChineseInLA egress probe requires both credential fields', () => {
   assert.equal(
     validChineseInLALoginDocument('<input name="username">'),
     false
+  );
+});
+
+test('ChineseInLA local egress is required only when a proxy is configured', () => {
+  assert.equal(chineseInLAProxyConfigured(undefined), false);
+  assert.equal(chineseInLAProxyConfigured('   '), false);
+  assert.equal(
+    chineseInLAProxyConfigured('http://127.0.0.1:18443'),
+    true
   );
 });
 

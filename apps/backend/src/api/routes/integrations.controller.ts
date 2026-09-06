@@ -55,7 +55,10 @@ import {
   metaProbeProviders,
   refreshProbeProviders,
 } from '@gitroom/backend/api/routes/channel.check.helpers';
-import { EgressRelayService } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
+import {
+  chineseInLAProxyConfigured,
+  EgressRelayService,
+} from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 
 type ChannelCheckStatus =
   | 'working'
@@ -288,6 +291,16 @@ export class IntegrationsController {
     }
 
     try {
+      if (
+        integration.providerIdentifier === 'chineseinla' &&
+        chineseInLAProxyConfigured()
+      ) {
+        await this._egressRelayService.ensureChineseInLALease(
+          integration.organizationId,
+          undefined,
+          10
+        );
+      }
       if (existingTokenProbeProviders.has(integration.providerIdentifier)) {
         return await this.checkExistingTokenChannel(integration);
       }
@@ -1179,6 +1192,16 @@ export class IntegrationsController {
     // @ts-ignore
     if (integrationProvider[body.name]) {
       try {
+        if (
+          getIntegration.providerIdentifier === 'chineseinla' &&
+          chineseInLAProxyConfigured()
+        ) {
+          await this._egressRelayService.ensureChineseInLALease(
+            org.id,
+            undefined,
+            10
+          );
+        }
         // @ts-ignore
         const load = await integrationProvider[body.name](
           getIntegration.token,

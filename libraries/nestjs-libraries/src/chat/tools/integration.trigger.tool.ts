@@ -11,13 +11,18 @@ import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abst
 import { timer } from '@gitroom/helpers/utils/timer';
 import { checkAuth } from '@gitroom/nestjs-libraries/chat/auth.context';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
+import {
+  chineseInLAProxyConfigured,
+  EgressRelayService,
+} from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 
 @Injectable()
 export class IntegrationTriggerTool implements AgentToolInterface {
   constructor(
     private _integrationManager: IntegrationManager,
     private _integrationService: IntegrationService,
-    private _refreshIntegrationService: RefreshIntegrationService
+    private _refreshIntegrationService: RefreshIntegrationService,
+    private _egressRelayService: EgressRelayService
   ) {}
   name = 'triggerTool';
 
@@ -102,6 +107,19 @@ export class IntegrationTriggerTool implements AgentToolInterface {
         let refreshed = false;
         while (true) {
           try {
+            // ChineseInLA rejects cloud-provider IPs. Establish and verify the
+            // organization's local route before the provider is allowed to
+            // connect to (or launch) its dedicated browser.
+            if (
+              getIntegration.providerIdentifier === 'chineseinla' &&
+              chineseInLAProxyConfigured()
+            ) {
+              await this._egressRelayService.ensureChineseInLALease(
+                organizationId,
+                undefined,
+                10
+              );
+            }
             // @ts-ignore
             const load = await integrationProvider[inputData.methodName](
               getIntegration.token,

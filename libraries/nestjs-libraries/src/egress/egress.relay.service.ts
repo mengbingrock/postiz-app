@@ -38,6 +38,10 @@ const validChineseInLALoginDocument = (html: string) =>
   /<input\b[^>]*\bname\s*=\s*["']username["'][^>]*>/i.test(html) &&
   /<input\b[^>]*\bname\s*=\s*["']password["'][^>]*>/i.test(html);
 
+const chineseInLAProxyConfigured = (
+  value = process.env.CHINESEINLA_PROXY
+) => Boolean(value?.trim());
+
 @Injectable()
 export class EgressRelayService implements OnModuleDestroy {
   private readonly logger = new Logger(EgressRelayService.name);
@@ -513,4 +517,8 @@ export class EgressRelayService implements OnModuleDestroy {
   }
 }
 
-export { allowedHost, validChineseInLALoginDocument };
+export {
+  allowedHost,
+  chineseInLAProxyConfigured,
+  validChineseInLALoginDocument,
+};
