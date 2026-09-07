@@ -32,6 +32,10 @@ import { TrackEnum } from '@gitroom/nestjs-libraries/user/track.enum';
 import { TrackService } from '@gitroom/nestjs-libraries/track/track.service';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import {
+  isNotSecuredEnvironment,
+  isSecuredEnvironment,
+} from '@gitroom/helpers/utils/security.environment';
+import {
   AuthorizationActions,
   Sections,
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
@@ -169,7 +173,7 @@ export class UsersController {
 
     response.cookie('impersonate', id, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -179,7 +183,7 @@ export class UsersController {
       expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
     });
 
-    if (process.env.NOT_SECURED) {
+    if (isNotSecuredEnvironment()) {
       response.header('impersonate', id);
     }
   }
@@ -311,7 +315,7 @@ export class UsersController {
   ) {
     response.cookie('showorg', id, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -321,7 +325,7 @@ export class UsersController {
       expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
     });
 
-    if (process.env.NOT_SECURED) {
+    if (isNotSecuredEnvironment()) {
       response.header('showorg', id);
     }
 
@@ -375,7 +379,7 @@ export class UsersController {
     response.header('logout', 'true');
     response.cookie('auth', '', {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -388,7 +392,7 @@ export class UsersController {
 
     response.cookie('showorg', '', {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -401,7 +405,7 @@ export class UsersController {
 
     response.cookie('impersonate', '', {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -439,7 +443,7 @@ export class UsersController {
     if (!req.cookies.track) {
       res.cookie('track', uniqueId, {
         domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-        ...(!process.env.NOT_SECURED
+        ...(isSecuredEnvironment()
           ? {
               secure: true,
               httpOnly: true,

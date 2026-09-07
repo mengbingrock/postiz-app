@@ -24,6 +24,10 @@ import { UserAgent } from '@gitroom/nestjs-libraries/user/user.agent';
 import { Provider } from '@prisma/client';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import * as Sentry from '@sentry/nestjs';
+import {
+  isNotSecuredEnvironment,
+  isSecuredEnvironment,
+} from '@gitroom/helpers/utils/security.environment';
 
 @ApiTags('Auth')
 @Controller('/auth')
@@ -72,7 +76,7 @@ export class AuthController {
 
       response.cookie('auth', jwt, {
         domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-        ...(!process.env.NOT_SECURED
+        ...(isSecuredEnvironment()
           ? {
               secure: true,
               httpOnly: true,
@@ -82,14 +86,14 @@ export class AuthController {
         expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
       });
 
-      if (process.env.NOT_SECURED) {
+      if (isNotSecuredEnvironment()) {
         response.header('auth', jwt);
       }
 
       if (typeof addedOrg !== 'boolean' && addedOrg?.organizationId) {
         response.cookie('showorg', addedOrg.organizationId, {
           domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-          ...(!process.env.NOT_SECURED
+          ...(isSecuredEnvironment()
             ? {
                 secure: true,
                 httpOnly: true,
@@ -99,7 +103,7 @@ export class AuthController {
           expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
         });
 
-        if (process.env.NOT_SECURED) {
+        if (isNotSecuredEnvironment()) {
           response.header('showorg', addedOrg.organizationId);
         }
       }
@@ -137,7 +141,7 @@ export class AuthController {
 
       response.cookie('auth', jwt, {
         domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-        ...(!process.env.NOT_SECURED
+        ...(isSecuredEnvironment()
           ? {
               secure: true,
               httpOnly: true,
@@ -147,14 +151,14 @@ export class AuthController {
         expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
       });
 
-      if (process.env.NOT_SECURED) {
+      if (isNotSecuredEnvironment()) {
         response.header('auth', jwt);
       }
 
       if (typeof addedOrg !== 'boolean' && addedOrg?.organizationId) {
         response.cookie('showorg', addedOrg.organizationId, {
           domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-          ...(!process.env.NOT_SECURED
+          ...(isSecuredEnvironment()
             ? {
                 secure: true,
                 httpOnly: true,
@@ -164,7 +168,7 @@ export class AuthController {
           expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
         });
 
-        if (process.env.NOT_SECURED) {
+        if (isNotSecuredEnvironment()) {
           response.header('showorg', addedOrg.organizationId);
         }
       }
@@ -222,7 +226,7 @@ export class AuthController {
     const state = `login-${makeId(16)}`;
     response.cookie('oauth_state', state, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -251,7 +255,7 @@ export class AuthController {
 
     response.cookie('auth', activate, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -261,7 +265,7 @@ export class AuthController {
       expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
     });
 
-    if (process.env.NOT_SECURED) {
+    if (isNotSecuredEnvironment()) {
       response.header('auth', activate);
     }
 
@@ -334,7 +338,7 @@ export class AuthController {
 
     response.cookie('auth', jwt, {
       domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-      ...(!process.env.NOT_SECURED
+      ...(isSecuredEnvironment()
         ? {
             secure: true,
             httpOnly: true,
@@ -344,7 +348,7 @@ export class AuthController {
       expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365),
     });
 
-    if (process.env.NOT_SECURED) {
+    if (isNotSecuredEnvironment()) {
       response.header('auth', jwt);
     }
 

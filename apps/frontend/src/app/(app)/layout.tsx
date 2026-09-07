@@ -24,6 +24,7 @@ import {
 import { HtmlComponent } from '@gitroom/frontend/components/layout/html.component';
 import Script from 'next/script';
 import { ChangeDirClient } from '@gitroom/frontend/components/new-layout/change.dir.client';
+import { isSecuredEnvironment } from '@gitroom/helpers/utils/security.environment';
 
 const jakartaSans = Plus_Jakarta_Sans({
   weight: ['600', '500'],
@@ -80,7 +81,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           telegramBotName={process.env.TELEGRAM_BOT_NAME!}
           neynarClientId={process.env.NEYNAR_CLIENT_ID!}
           appleClientId={process.env.APPLE_CLIENT_ID!}
-          isSecured={!process.env.NOT_SECURED}
+          isSecured={isSecuredEnvironment()}
           disableImageCompression={!!process.env.DISABLE_IMAGE_COMPRESSION}
           disableXAnalytics={!!process.env.DISABLE_X_ANALYTICS}
           sentryDsn={process.env.NEXT_PUBLIC_SENTRY_DSN!}

@@ -8,11 +8,12 @@ import { getCookieUrlFromDomain } from '@gitroom/helpers/subdomain/subdomain.man
 import { HttpForbiddenException } from '@gitroom/nestjs-libraries/services/exception.filter';
 import { MastraService } from '@gitroom/nestjs-libraries/chat/mastra.service';
 import { setSentryUserContext } from '@gitroom/nestjs-libraries/sentry/initialize.sentry';
+import { isSecuredEnvironment } from '@gitroom/helpers/utils/security.environment';
 
 export const removeAuth = (res: Response) => {
   res.cookie('auth', '', {
     domain: getCookieUrlFromDomain(process.env.FRONTEND_URL!),
-    ...(!process.env.NOT_SECURED
+    ...(isSecuredEnvironment()
       ? {
           secure: true,
           httpOnly: true,
@@ -47,7 +48,9 @@ export class AuthMiddleware implements NestMiddleware {
         throw new HttpForbiddenException();
       }
 
-      let user = (await this._userService.getUserById(payload.id)) as User | null;
+      let user = (await this._userService.getUserById(
+        payload.id
+      )) as User | null;
 
       if (!user) {
         throw new HttpForbiddenException();

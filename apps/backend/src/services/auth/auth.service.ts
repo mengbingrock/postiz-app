@@ -11,6 +11,7 @@ import { NotificationService } from '@gitroom/nestjs-libraries/database/prisma/n
 import { ForgotReturnPasswordDto } from '@gitroom/nestjs-libraries/dtos/auth/forgot-return.password.dto';
 import { EmailService } from '@gitroom/nestjs-libraries/services/email.service';
 import { NewsletterService } from '@gitroom/nestjs-libraries/newsletter/newsletter.service';
+import { isSecuredEnvironment } from '@gitroom/helpers/utils/security.environment';
 
 @Injectable()
 export class AuthService {
@@ -358,7 +359,7 @@ export class AuthService {
     // the mobile app passes redirect_uri and keeps no cookies, the web flow
     // never passes it, so the state nonce is only enforced for the web flow
     if (
-      !process.env.NOT_SECURED &&
+      isSecuredEnvironment() &&
       !redirectUri &&
       (!state || state !== stateCookie)
     ) {

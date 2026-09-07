@@ -10,6 +10,7 @@ import { Plus_Jakarta_Sans } from 'next/font/google';
 import clsx from 'clsx';
 import { VariableContextComponent } from '@gitroom/react/helpers/variable.context';
 import UtmSaver from '@gitroom/helpers/utils/utm.saver';
+import { isSecuredEnvironment } from '@gitroom/helpers/utils/security.environment';
 
 const jakartaSans = Plus_Jakarta_Sans({
   weight: ['600', '500'],
@@ -52,7 +53,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           telegramBotName={process.env.TELEGRAM_BOT_NAME!}
           neynarClientId={process.env.NEYNAR_CLIENT_ID!}
           appleClientId={process.env.APPLE_CLIENT_ID!}
-          isSecured={!process.env.NOT_SECURED}
+          isSecured={isSecuredEnvironment()}
           isChatBase={false}
           disableImageCompression={!!process.env.DISABLE_IMAGE_COMPRESSION}
           disableXAnalytics={!!process.env.DISABLE_X_ANALYTICS}
