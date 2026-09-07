@@ -30,6 +30,8 @@ import {
   redNoteBinaryPaths,
   redNoteChineseInLAProfilePaths,
   redNoteProfileEndpoint,
+  resolveRedNoteSite,
+  redNoteCreatorPublishURL,
 } from '@gitroom/nestjs-libraries/integrations/social/rednote.binary.installer';
 import {
   fallbackRedNoteLoginAgentUi,
@@ -1372,10 +1374,18 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         /(?:noteId|note_id|笔记ID|ID)\s*[:=：]\s*([a-f0-9]{24})/i
       )?.[1] || postDetails[0]?.id;
 
+    // International (rednote.com) accounts publish through their own creator
+    // center; link to the property the session actually lives on.
+    const site = await resolveRedNoteSite(
+      redNoteBinaryPaths(credentials.binaryPath, credentials.profileId)
+        .cookiePath
+    );
+    const releaseURL = redNoteCreatorPublishURL(site);
+
     return postDetails.map((item) => ({
       id: item.id,
       postId: remoteId || item.id,
-      releaseURL: 'https://creator.xiaohongshu.com/publish/publish',
+      releaseURL,
       status: 'completed',
     }));
   }

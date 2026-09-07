@@ -505,3 +505,47 @@ export const ensureRedNoteBinaries = async (
   installing.set(key, installation);
   return installation;
 };
+
+export type RedNoteSite = 'cn' | 'intl';
+
+const RED_NOTE_CREATOR_HOSTS: Record<RedNoteSite, string> = {
+  cn: 'https://creator.xiaohongshu.com',
+  intl: 'https://creator.rednote.com',
+};
+
+/**
+ * Which Xiaohongshu property a profile's session belongs to. The MCP stamps
+ * "site" on the session file after each scan; older files are classified from
+ * their cookies (an id_token on rednote.com means the international brand).
+ * Anything unreadable is treated as the domestic site.
+ */
+export const resolveRedNoteSite = async (
+  cookiePath: string | undefined
+): Promise<RedNoteSite> => {
+  if (!cookiePath) {
+    return 'cn';
+  }
+  try {
+    const parsed = JSON.parse(await readFile(cookiePath, 'utf8'));
+    if (parsed?.site === 'intl' || parsed?.site === 'cn') {
+      return parsed.site;
+    }
+    const cookies: Array<{ name?: string; domain?: string }> = Array.isArray(
+      parsed
+    )
+      ? parsed
+      : Array.isArray(parsed?.cookies)
+        ? parsed.cookies
+        : [];
+    return cookies.some(
+      (c) => c?.name === 'id_token' && (c?.domain || '').includes('rednote.com')
+    )
+      ? 'intl'
+      : 'cn';
+  } catch {
+    return 'cn';
+  }
+};
+
+export const redNoteCreatorPublishURL = (site: RedNoteSite): string =>
+  `${RED_NOTE_CREATOR_HOSTS[site]}/publish/publish`;
