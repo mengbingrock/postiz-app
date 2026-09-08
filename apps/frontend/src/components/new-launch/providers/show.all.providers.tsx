@@ -58,6 +58,10 @@ export const Providers = [
     component: LinkedinProvider,
   },
   {
+    identifier: 'linkedin-byo',
+    component: LinkedinProvider,
+  },
+  {
     identifier: 'linkedin-page',
     component: LinkedinProvider,
   },

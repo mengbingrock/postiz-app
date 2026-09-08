@@ -81,6 +81,7 @@ const channelPlatformLabels: Record<string, string> = {
   instagram: 'Instagram Business',
   'instagram-standalone': 'Instagram',
   linkedin: 'LinkedIn',
+  'linkedin-byo': 'LinkedIn Personal (Own App)',
   'linkedin-page': 'LinkedIn Page',
   'linkedin-page-byo': 'LinkedIn Page (Own App)',
   rednote: 'RedNote',

@@ -22,6 +22,7 @@ import { capitalize } from 'lodash';
 import { RedNoteConnectionSetup } from '@gitroom/frontend/components/launches/rednote.connection.setup';
 import { FacebookConnectionSetup } from '@gitroom/frontend/components/launches/facebook.connection.setup';
 import { LinkedinPageByoConnectionSetup } from '@gitroom/frontend/components/launches/linkedin.page.byo.connection.setup';
+import { LinkedinByoConnectionSetup } from '@gitroom/frontend/components/launches/linkedin.byo.connection.setup';
 import { ChineseInLAConnectionSetup } from '@gitroom/frontend/components/launches/chineseinla.connection.setup';
 import { RedditAgentConnectionSetup } from '@gitroom/frontend/components/launches/reddit.agent.connection.setup';
 import {
@@ -681,6 +682,26 @@ export const AddProviderComponent: FC<{
               modal: 'bg-transparent text-textColor',
             },
             children: <UrlModal gotoUrl={gotoIntegration} />,
+          });
+          return;
+        }
+        if (identifier === 'linkedin-byo') {
+          modal.openModal({
+            title: t(
+              'connect_linkedin_personal_own_app',
+              'Connect LinkedIn Personal (Own App)'
+            ),
+            withCloseButton: true,
+            ...(isMobile ? { removeLayout: true, fullScreen: true } : {}),
+            classNames: {
+              modal: 'bg-transparent text-textColor',
+            },
+            children: (
+              <LinkedinByoConnectionSetup
+                onboarding={onboarding}
+                redirectUrl={isMobile ? 'postiz://integrations' : undefined}
+              />
+            ),
           });
           return;
         }

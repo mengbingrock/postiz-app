@@ -153,6 +153,10 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     };
   }
 
+  protected redirectUri() {
+    return `${process.env.FRONTEND_URL}/integrations/social/${this.identifier}`;
+  }
+
   async refreshToken(
     refresh_token: string,
     clientInformation?: ClientInformation
@@ -215,7 +219,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${
       credentials.clientId
     }&prompt=none&redirect_uri=${encodeURIComponent(
-      `${process.env.FRONTEND_URL}/integrations/social/linkedin`
+      this.redirectUri()
     )}&state=${state}&scope=${encodeURIComponent(this.scopes.join(' '))}`;
     return {
       url,
@@ -236,12 +240,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     const body = new URLSearchParams();
     body.append('grant_type', 'authorization_code');
     body.append('code', params.code);
-    body.append(
-      'redirect_uri',
-      `${process.env.FRONTEND_URL}/integrations/social/linkedin${
-        params.refresh ? `?refresh=${params.refresh}` : ''
-      }`
-    );
+    body.append('redirect_uri', this.redirectUri());
     body.append('client_id', credentials.clientId);
     body.append('client_secret', credentials.clientSecret);
 
@@ -420,7 +419,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
             },
             body,
           },
-          'linkedin',
+          this.identifier,
           0,
           true
         );
@@ -446,7 +445,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
           // are always a Buffer.
           body: picture as Buffer,
         },
-        'linkedin',
+        this.identifier,
         0,
         true
       );
@@ -1169,7 +1168,12 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     identifier: 'linkedin-add-comment',
     title: 'Add comments by a different account',
     description: 'Add accounts to comment on your post',
-    pickIntegration: ['linkedin', 'linkedin-page', 'linkedin-page-byo'],
+    pickIntegration: [
+      'linkedin',
+      'linkedin-byo',
+      'linkedin-page',
+      'linkedin-page-byo',
+    ],
     fields: [
       {
         name: 'comment',
@@ -1210,7 +1214,12 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     identifier: 'linkedin-repost-post-users',
     title: 'Add Re-posters',
     description: 'Add accounts to repost your post',
-    pickIntegration: ['linkedin', 'linkedin-page', 'linkedin-page-byo'],
+    pickIntegration: [
+      'linkedin',
+      'linkedin-byo',
+      'linkedin-page',
+      'linkedin-page-byo',
+    ],
     fields: [],
   })
   async repostPostUsers(

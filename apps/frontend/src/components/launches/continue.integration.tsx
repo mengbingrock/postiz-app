@@ -265,6 +265,7 @@ export const ContinueIntegration: FC<{
     const names: Record<string, string> = {
       facebook: 'Facebook',
       instagram: 'Instagram',
+      'linkedin-byo': 'LinkedIn Personal (Own App)',
       'linkedin-page': 'LinkedIn',
       'linkedin-page-byo': 'LinkedIn Page (Own App)',
       youtube: 'YouTube',

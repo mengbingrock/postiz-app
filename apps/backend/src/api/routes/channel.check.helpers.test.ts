@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import {
   hasLiveChannelProbe,
   metaChannelAccessToken,
@@ -19,6 +20,7 @@ describe('channel check helpers', () => {
     expect(hasLiveChannelProbe('youtube')).toBe(true);
     expect(hasLiveChannelProbe('chineseinla')).toBe(true);
     expect(hasLiveChannelProbe('linkedin-page-byo')).toBe(true);
+    expect(hasLiveChannelProbe('linkedin-byo')).toBe(true);
     expect(hasLiveChannelProbe('unknown-provider')).toBe(false);
   });
 });

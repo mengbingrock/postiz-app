@@ -44,6 +44,7 @@ export type AllProvidersSettings =
   | ProviderExtension<'twitch', TwitchDto>
   | ProviderExtension<'x', XDto>
   | ProviderExtension<'linkedin', LinkedinDto>
+  | ProviderExtension<'linkedin-byo', LinkedinDto>
   | ProviderExtension<'linkedin-page', LinkedinDto>
   | ProviderExtension<'linkedin-page-byo', LinkedinDto>
   | ProviderExtension<'instagram', InstagramDto>
@@ -88,6 +89,7 @@ export const allProviders = (setEmpty?: any) => {
     { value: TwitchDto, name: 'twitch' },
     { value: XDto, name: 'x' },
     { value: LinkedinDto, name: 'linkedin' },
+    { value: LinkedinDto, name: 'linkedin-byo' },
     { value: LinkedinDto, name: 'linkedin-page' },
     { value: LinkedinDto, name: 'linkedin-page-byo' },
     { value: InstagramDto, name: 'instagram' },

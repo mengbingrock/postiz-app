@@ -51,6 +51,7 @@ import {
 import {
   existingTokenProbeProviders,
   hasLiveChannelProbe,
+  linkedinPersonalProbeProviders,
   linkedinPageProbeProviders,
   metaChannelAccessToken,
   metaProbeProviders,
@@ -236,6 +237,40 @@ export class IntegrationsController {
     );
   }
 
+  private async checkLinkedInPersonalChannel(integration: Integration) {
+    const response = await fetch('https://api.linkedin.com/v2/userinfo', {
+      headers: { Authorization: `Bearer ${integration.token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.ok && result?.sub) {
+      return this.channelCheckResult(
+        integration,
+        'working',
+        'LinkedIn accepted the saved personal-profile access token.',
+        true
+      );
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return this.channelCheckResult(
+        integration,
+        'reconnect_required',
+        'LinkedIn rejected the saved personal-profile access token. Reconnect this channel.',
+        true
+      );
+    }
+
+    return this.channelCheckResult(
+      integration,
+      'failed',
+      `The LinkedIn personal-profile health check failed${
+        response.status ? ` (HTTP ${response.status})` : ''
+      }. Try again before reconnecting.`,
+      true
+    );
+  }
+
   private async checkRefreshableChannel(integration: Integration) {
     if (!integration.refreshToken) {
       return this.channelCheckResult(
@@ -372,6 +407,9 @@ export class IntegrationsController {
       }
       if (linkedinPageProbeProviders.has(integration.providerIdentifier)) {
         return await this.checkLinkedInPageChannel(integration);
+      }
+      if (linkedinPersonalProbeProviders.has(integration.providerIdentifier)) {
+        return await this.checkLinkedInPersonalChannel(integration);
       }
       if (refreshProbeProviders.has(integration.providerIdentifier)) {
         return await this.checkRefreshableChannel(integration);
