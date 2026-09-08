@@ -7,6 +7,8 @@ export const existingTokenProbeProviders = new Set([
 
 export const metaProbeProviders = new Set(['facebook', 'instagram']);
 
+export const linkedinPageProbeProviders = new Set(['linkedin-page-byo']);
+
 export const refreshProbeProviders = new Set([
   'gmb',
   'linkedin',
@@ -17,6 +19,7 @@ export const refreshProbeProviders = new Set([
 export const hasLiveChannelProbe = (providerIdentifier: string) =>
   existingTokenProbeProviders.has(providerIdentifier) ||
   metaProbeProviders.has(providerIdentifier) ||
+  linkedinPageProbeProviders.has(providerIdentifier) ||
   refreshProbeProviders.has(providerIdentifier);
 
 export const metaChannelAccessToken = (

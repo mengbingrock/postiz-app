@@ -55,6 +55,62 @@ export class LinkedinPageProvider
     return `${process.env.FRONTEND_URL}/integrations/social/${this.identifier}`;
   }
 
+  private async memberIdentity(accessToken: string) {
+    if (this.scopes.includes('openid')) {
+      const [userInfo, member] = await Promise.all([
+        fetch('https://api.linkedin.com/v2/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }).then((response) => response.json()),
+        fetch('https://api.linkedin.com/v2/me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }).then((response) => response.json()),
+      ]);
+
+      return {
+        id: userInfo.sub,
+        name: userInfo.name,
+        picture: userInfo.picture || '',
+        username: member.vanityName || '',
+      };
+    }
+
+    // LinkedIn requires Community Management API to be the only product on
+    // some applications. Those apps receive r_basicprofile rather than OIDC
+    // scopes, so /v2/userinfo is unavailable. The legacy member endpoint is
+    // sufficient to identify the administrator during the Page picker step.
+    const response = await fetch(
+      'https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName,vanityName,profilePicture(displayImage~:playableStreams))',
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+      }
+    );
+    const member = await response.json();
+    if (!response.ok || !member.id) {
+      throw new Error(
+        member.message ||
+          member.error_description ||
+          'LinkedIn could not load the authorizing member profile'
+      );
+    }
+
+    return {
+      id: member.id,
+      name:
+        [member.localizedFirstName, member.localizedLastName]
+          .filter(Boolean)
+          .join(' ') ||
+        member.vanityName ||
+        'LinkedIn member',
+      picture:
+        member.profilePicture?.['displayImage~']?.elements?.at(-1)
+          ?.identifiers?.[0]?.identifier || '',
+      username: member.vanityName || '',
+    };
+  }
+
   override async refreshToken(
     refresh_token: string,
     clientInformation?: ClientInformation
@@ -82,25 +138,9 @@ export class LinkedinPageProvider
       })
     ).json();
 
-    const { vanityName } = await (
-      await fetch('https://api.linkedin.com/v2/me', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      })
-    ).json();
-
-    const {
-      name,
-      sub: id,
-      picture,
-    } = await (
-      await fetch('https://api.linkedin.com/v2/userinfo', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      })
-    ).json();
+    const { id, name, picture, username } = await this.memberIdentity(
+      accessToken
+    );
 
     return {
       id,
@@ -109,7 +149,7 @@ export class LinkedinPageProvider
       expiresIn: expires_in,
       name,
       picture,
-      username: vanityName,
+      username,
     };
   }
 
@@ -279,34 +319,18 @@ export class LinkedinPageProvider
 
     this.checkScopes(this.scopes, scope);
 
-    const {
-      name,
-      sub: id,
-      picture,
-    } = await (
-      await fetch('https://api.linkedin.com/v2/userinfo', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      })
-    ).json();
-
-    const { vanityName } = await (
-      await fetch('https://api.linkedin.com/v2/me', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      })
-    ).json();
+    const { id, name, picture, username } = await this.memberIdentity(
+      accessToken
+    );
 
     return {
-      id: id,
+      id,
       accessToken,
       refreshToken,
       expiresIn,
       name,
       picture,
-      username: vanityName,
+      username,
     };
   }
 

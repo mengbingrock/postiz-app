@@ -9,9 +9,7 @@ export class LinkedinPageByoProvider extends LinkedinPageProvider {
   toolTip =
     'Connect a LinkedIn Company Page with your own approved developer app.';
   override scopes = [
-    'openid',
-    'profile',
-    'email',
+    'r_basicprofile',
     'rw_organization_admin',
     'w_organization_social',
     'r_organization_social',

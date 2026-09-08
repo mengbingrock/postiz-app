@@ -82,6 +82,7 @@ const channelPlatformLabels: Record<string, string> = {
   'instagram-standalone': 'Instagram',
   linkedin: 'LinkedIn',
   'linkedin-page': 'LinkedIn Page',
+  'linkedin-page-byo': 'LinkedIn Page (Own App)',
   rednote: 'RedNote',
   'reddit-agent': 'Reddit',
   'tajima-website': 'Website',

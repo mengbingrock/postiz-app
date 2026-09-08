@@ -10,9 +10,7 @@ import { Input } from '@gitroom/react/form/input';
 import { Button } from '@gitroom/react/form/button';
 
 const requestedPermissions = [
-  'openid',
-  'profile',
-  'email',
+  'r_basicprofile',
   'rw_organization_admin',
   'w_organization_social',
   'r_organization_social',
@@ -108,9 +106,10 @@ export const LinkedinPageByoConnectionSetup: FC<{
           administer.
         </li>
         <li>
-          In <strong>Products</strong>, add{' '}
-          <strong>Sign In with LinkedIn using OpenID Connect</strong> and obtain
-          Community Management API Development or Standard tier access.
+          In <strong>Products</strong>, obtain Community Management API
+          Development or Standard tier access. LinkedIn may require Community
+          Management API to be the only product on this app; OpenID Connect is
+          not required for this Page connection.
         </li>
         <li>
           In <strong>Auth → Authorized redirect URLs for your app</strong>, add

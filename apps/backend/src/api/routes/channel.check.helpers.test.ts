@@ -18,6 +18,7 @@ describe('channel check helpers', () => {
     expect(hasLiveChannelProbe('instagram')).toBe(true);
     expect(hasLiveChannelProbe('youtube')).toBe(true);
     expect(hasLiveChannelProbe('chineseinla')).toBe(true);
+    expect(hasLiveChannelProbe('linkedin-page-byo')).toBe(true);
     expect(hasLiveChannelProbe('unknown-provider')).toBe(false);
   });
 });

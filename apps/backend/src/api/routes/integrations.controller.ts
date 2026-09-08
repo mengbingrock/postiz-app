@@ -51,6 +51,7 @@ import {
 import {
   existingTokenProbeProviders,
   hasLiveChannelProbe,
+  linkedinPageProbeProviders,
   metaChannelAccessToken,
   metaProbeProviders,
   refreshProbeProviders,
@@ -192,6 +193,49 @@ export class IntegrationsController {
     );
   }
 
+  private async checkLinkedInPageChannel(integration: Integration) {
+    const response = await fetch(
+      `https://api.linkedin.com/v2/organizations/${encodeURIComponent(
+        integration.internalId
+      )}?projection=(id,localizedName)`,
+      {
+        headers: {
+          Authorization: `Bearer ${integration.token}`,
+          'X-Restli-Protocol-Version': '2.0.0',
+          'LinkedIn-Version': '202601',
+        },
+        signal: AbortSignal.timeout(20_000),
+      }
+    );
+    const result = await response.json().catch(() => ({}));
+    if (response.ok && result?.id) {
+      return this.channelCheckResult(
+        integration,
+        'working',
+        'LinkedIn accepted the saved Page access token.',
+        true
+      );
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return this.channelCheckResult(
+        integration,
+        'reconnect_required',
+        'LinkedIn rejected the saved Page access token. Reconnect this channel.',
+        true
+      );
+    }
+
+    return this.channelCheckResult(
+      integration,
+      'failed',
+      `The LinkedIn Page health check failed${
+        response.status ? ` (HTTP ${response.status})` : ''
+      }. Try again before reconnecting.`,
+      true
+    );
+  }
+
   private async checkRefreshableChannel(integration: Integration) {
     if (!integration.refreshToken) {
       return this.channelCheckResult(
@@ -325,6 +369,9 @@ export class IntegrationsController {
       }
       if (metaProbeProviders.has(integration.providerIdentifier)) {
         return await this.checkMetaChannel(integration);
+      }
+      if (linkedinPageProbeProviders.has(integration.providerIdentifier)) {
+        return await this.checkLinkedInPageChannel(integration);
       }
       if (refreshProbeProviders.has(integration.providerIdentifier)) {
         return await this.checkRefreshableChannel(integration);
@@ -1246,10 +1293,7 @@ export class IntegrationsController {
           getIntegration.providerIdentifier === 'chineseinla' &&
           chineseInLAProxyConfigured()
         ) {
-          await this.configureChineseInLAEgress(
-            org.id,
-            getIntegration.token
-          );
+          await this.configureChineseInLAEgress(org.id, getIntegration.token);
         }
         // @ts-ignore
         const load = await integrationProvider[body.name](
