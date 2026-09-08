@@ -30,6 +30,10 @@ def parser() -> argparse.ArgumentParser:
     configure.add_argument("--url", help="Postiz server or MCP URL (kept from the existing config when omitted)")
     configure.add_argument("--api-key", help="Postiz API key (prompted when omitted)")
     configure.add_argument("--device-name")
+    login = commands.add_parser("login", help="Link this device via your browser (no API key copy/paste)")
+    login.add_argument("--url", help="Postiz server or MCP URL (kept from the existing config when omitted)")
+    login.add_argument("--device-name")
+    login.add_argument("--no-browser", action="store_true", help="Print the URL instead of opening a browser")
     commands.add_parser("serve")
     commands.add_parser("connector")
     proxy = commands.add_parser("proxy")
@@ -82,7 +86,13 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     try:
-        if args.command == "configure":
+        if args.command == "login":
+            from .login import login as browser_login
+
+            settings = browser_login(args.url, args.device_name, open_browser=not args.no_browser)
+            print(f"Linked {settings.mcp_url} as device {settings.device_id}")
+            print(f"Saved to {config_path()}")
+        elif args.command == "configure":
             api_key = args.api_key or getpass.getpass("Postiz API key: ")
             settings = save_settings(args.url, api_key, args.device_name)
             print(f"Configured {settings.mcp_url} as device {settings.device_id}")

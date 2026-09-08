@@ -6,7 +6,22 @@ egress connector. The MCP tools and scheduling logic stay on the Postiz
 server. Only allow-listed HTTPS connections can leave through the local
 machine, and only while a short-lived lease is active.
 
-## Install and configure
+## Install and log in (browser, no key copy/paste)
+
+```bash
+python3 -m pip install post-truegrit-mcp
+postiz-mcp login --url https://post.truegrit.dev/post/mcp --device-name my-mac
+```
+
+`login` opens your browser at Postiz. Sign in if asked, then click **Connect** —
+the page hands the organization API key straight to a one-shot listener on
+`127.0.0.1` on your machine, and it is saved to `~/.config/postiz-mcp/config.json`
+(owner-only). Nothing to paste. Re-run `postiz-mcp login` any time to
+re-link or switch accounts. Use `--no-browser` to just print the URL.
+Your Postiz role must be ADMIN to read the org key.
+
+## Install and configure (manual key)
+
 
 ```bash
 python3 -m pip install post-truegrit-mcp

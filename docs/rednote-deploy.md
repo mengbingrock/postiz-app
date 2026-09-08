@@ -162,9 +162,13 @@ python3 -m venv ~/.local/share/postiz-mcp/venv
 ~/.local/share/postiz-mcp/venv/bin/python -m pip install --upgrade pip post-truegrit-mcp
 ```
 
-Configure via env in the MCP client (no keyring required; the package also
-supports `postiz-mcp configure` writing an owner-only `~/.config/postiz-mcp/
-config.json`). Codex `~/.codex/config.toml`:
+Easiest: `postiz-mcp login --url https://post.truegrit.dev/post/mcp --device-name my-mac`
+opens the browser; after sign-in you click **Connect** on `/mcp/connect` and the
+org API key is delivered to a one-shot `127.0.0.1` listener and saved to an
+owner-only `~/.config/postiz-mcp/config.json` (needs ADMIN role; the page
+hard-codes loopback as the callback host). Alternatively configure via env in
+the MCP client (no keyring required) or `postiz-mcp configure`. Codex
+`~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.postiz-mcp]

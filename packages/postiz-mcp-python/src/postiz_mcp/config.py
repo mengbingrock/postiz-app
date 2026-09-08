@@ -98,7 +98,7 @@ def load_settings(
     resolved_key = (api_key or os.environ.get("POSTIZ_API_KEY") or data.get("api_key") or "").strip()
     if not resolved_key:
         raise RuntimeError(
-            f"No Postiz API key found. Run `postiz-mcp configure` or add \"api_key\" to {config_path()}."
+            f"No Postiz API key found. Run `postiz-mcp login` (browser) or `postiz-mcp configure`, or add \"api_key\" to {config_path()}."
         )
     resolved_device = device_id or os.environ.get("POSTIZ_DEVICE_ID") or data.get("device_id") or _new_device_id()
     return Settings(mcp_url=mcp_url, api_key=resolved_key, device_id=resolved_device)
