@@ -8,7 +8,7 @@ import logging
 import sys
 
 from .bridge import run_stdio_bridge
-from .config import load_settings, save_settings
+from .config import config_path, load_settings, save_settings
 from .connector import LocalEgressConnector
 from .remote import RemoteMcp
 
@@ -27,8 +27,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--device-id")
     commands = result.add_subparsers(dest="command")
     configure = commands.add_parser("configure")
-    configure.add_argument("--url", required=True)
-    configure.add_argument("--api-key", help=argparse.SUPPRESS)
+    configure.add_argument("--url", help="Postiz server or MCP URL (kept from the existing config when omitted)")
+    configure.add_argument("--api-key", help="Postiz API key (prompted when omitted)")
     configure.add_argument("--device-name")
     commands.add_parser("serve")
     commands.add_parser("connector")
@@ -86,6 +86,7 @@ def main() -> None:
             api_key = args.api_key or getpass.getpass("Postiz API key: ")
             settings = save_settings(args.url, api_key, args.device_name)
             print(f"Configured {settings.mcp_url} as device {settings.device_id}")
+            print(f"Saved to {config_path()}")
         elif args.command in {None, "serve"}:
             asyncio.run(serve(args))
         elif args.command == "connector":

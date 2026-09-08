@@ -15,10 +15,22 @@ postiz-mcp configure \
   --device-name my-mac
 ```
 
-The command securely prompts for the API key, which is stored in the
-operating-system keyring. The non-secret server URL and stable device ID are
-stored in `~/.config/postiz-mcp/config.json`.
-Set `POSTIZ_API_KEY` instead on systems without a usable keyring.
+The command prompts for the API key (or accepts `--api-key`) and writes the
+server URL, API key and device ID to `~/.config/postiz-mcp/config.json`. The
+file is created with owner-only permissions (`0600`). You can also write it by
+hand:
+
+```json
+{
+  "mcp_url": "https://post.truegrit.dev/post/mcp",
+  "api_key": "your-postiz-api-key",
+  "device_id": "my-mac"
+}
+```
+
+`POSTIZ_MCP_URL`, `POSTIZ_API_KEY` and `POSTIZ_DEVICE_ID` override the file,
+and `POSTIZ_MCP_CONFIG` points at a different config file. No system keyring
+is used.
 
 ## Install from a development checkout
 

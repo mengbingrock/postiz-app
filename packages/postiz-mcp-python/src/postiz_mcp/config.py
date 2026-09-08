@@ -10,11 +10,6 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, urlunparse
 
-import keyring
-from keyring.errors import KeyringError
-
-SERVICE_NAME = "postiz-mcp"
-
 
 def config_path() -> Path:
     configured = os.environ.get("POSTIZ_MCP_CONFIG")
@@ -56,22 +51,40 @@ class Settings:
     device_id: str
 
 
-def save_settings(url: str, api_key: str, device_name: Optional[str] = None) -> Settings:
-    mcp_url = normalize_mcp_url(url)
-    device_id = device_name or f"{platform.node() or socket.gethostname()}-{secrets.token_hex(4)}"
-    if not api_key.strip():
+def _read_config() -> dict[str, str]:
+    path = config_path()
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text())
+    return data if isinstance(data, dict) else {}
+
+
+def _new_device_id() -> str:
+    return f"{platform.node() or socket.gethostname()}-{secrets.token_hex(4)}"
+
+
+def save_settings(
+    url: Optional[str],
+    api_key: str,
+    device_name: Optional[str] = None,
+) -> Settings:
+    """Write the URL, API key and device ID to the owner-only config file."""
+    existing = _read_config()
+    mcp_url = normalize_mcp_url(url or existing.get("mcp_url", ""))
+    api_key = api_key.strip()
+    if not api_key:
         raise ValueError("Postiz API key cannot be empty.")
+    device_id = device_name or existing.get("device_id") or _new_device_id()
+
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"mcp_url": mcp_url, "device_id": device_id}, indent=2) + "\n")
+    payload = {"mcp_url": mcp_url, "api_key": api_key, "device_id": device_id}
+    # Create with owner-only permissions before the secret is written.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as handle:
+        handle.write(json.dumps(payload, indent=2) + "\n")
     path.chmod(0o600)
-    try:
-        keyring.set_password(SERVICE_NAME, mcp_url, api_key.strip())
-    except KeyringError as error:
-        raise RuntimeError(
-            "Could not store the API key in the system keyring. Set POSTIZ_API_KEY instead."
-        ) from error
-    return Settings(mcp_url=mcp_url, api_key=api_key.strip(), device_id=device_id)
+    return Settings(mcp_url=mcp_url, api_key=api_key, device_id=device_id)
 
 
 def load_settings(
@@ -79,20 +92,13 @@ def load_settings(
     api_key: Optional[str] = None,
     device_id: Optional[str] = None,
 ) -> Settings:
-    data: dict[str, str] = {}
-    path = config_path()
-    if path.exists():
-        data = json.loads(path.read_text())
+    """Resolve settings from CLI flags, then environment, then the config file."""
+    data = _read_config()
     mcp_url = normalize_mcp_url(url or os.environ.get("POSTIZ_MCP_URL") or data.get("mcp_url", ""))
-    resolved_key = api_key or os.environ.get("POSTIZ_API_KEY")
+    resolved_key = (api_key or os.environ.get("POSTIZ_API_KEY") or data.get("api_key") or "").strip()
     if not resolved_key:
-        try:
-            resolved_key = keyring.get_password(SERVICE_NAME, mcp_url)
-        except KeyringError:
-            resolved_key = None
-    if not resolved_key:
-        raise RuntimeError("No Postiz API key found. Run `postiz-mcp configure` or set POSTIZ_API_KEY.")
-    resolved_device = device_id or os.environ.get("POSTIZ_DEVICE_ID") or data.get("device_id")
-    if not resolved_device:
-        resolved_device = f"{platform.node() or socket.gethostname()}-{secrets.token_hex(4)}"
-    return Settings(mcp_url=mcp_url, api_key=resolved_key.strip(), device_id=resolved_device)
+        raise RuntimeError(
+            f"No Postiz API key found. Run `postiz-mcp configure` or add \"api_key\" to {config_path()}."
+        )
+    resolved_device = device_id or os.environ.get("POSTIZ_DEVICE_ID") or data.get("device_id") or _new_device_id()
+    return Settings(mcp_url=mcp_url, api_key=resolved_key, device_id=resolved_device)
