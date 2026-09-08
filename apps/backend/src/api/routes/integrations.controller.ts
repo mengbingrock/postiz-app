@@ -683,12 +683,14 @@ export class IntegrationsController {
       binaryPath?: string;
       mcpEndpoint?: string;
       profileName?: string;
+      visible?: boolean;
     }
   ) {
     try {
       return await this.redNoteProvider().startInteractiveLogin(
         `${org.id}\0${user.id}`,
-        body
+        body,
+        body?.visible === true
       );
     } catch (error) {
       throw new BadRequestException(
@@ -729,6 +731,26 @@ export class IntegrationsController {
         error instanceof Error
           ? error.message
           : 'Unable to submit the RedNote verification code.'
+      );
+    }
+  }
+
+  @Post('/rednote/login/resend')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async resendRedNoteLoginCode(
+    @GetOrgFromRequest() org: Organization,
+    @GetUserFromRequest() user: User
+  ) {
+    try {
+      return await this.redNoteProvider().resendInteractiveLoginCode(
+        `${org.id}\0${user.id}`
+      );
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : 'Unable to resend the RedNote verification code.'
       );
     }
   }

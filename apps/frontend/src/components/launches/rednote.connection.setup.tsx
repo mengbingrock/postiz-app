@@ -31,6 +31,7 @@ type SetupResponse = {
   otpMaxAttempts?: number;
   agentEnabled?: boolean;
   agentUi?: AgentUi;
+  viewUrl?: string;
 };
 
 type AgentUi = {
@@ -83,7 +84,49 @@ export const RedNoteConnectionSetup: FC<{
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [agentUi, setAgentUi] = useState<AgentUi>();
   const [starting, setStarting] = useState(false);
+  const [startingVisible, setStartingVisible] = useState(false);
+  const [viewUrl, setViewUrl] = useState<string>();
   const [submittingOtp, setSubmittingOtp] = useState(false);
+  const [resendingOtp, setResendingOtp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setResendCooldown((value) => value - 1),
+      1000
+    );
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
+
+  const resendOtp = useCallback(async () => {
+    setResendingOtp(true);
+    try {
+      const response = await fetch('/integrations/rednote/login/resend', {
+        method: 'POST',
+      });
+      const data = (await response.json()) as SetupResponse;
+      if (!response.ok) {
+        throw new Error(
+          responseError(data, 'Unable to resend the verification code.')
+        );
+      }
+      setMessage(
+        responseError(data, 'Verification code resent. Check your phone.')
+      );
+      setResendCooldown(60);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to resend the verification code.'
+      );
+    } finally {
+      setResendingOtp(false);
+    }
+  }, []);
   const [connecting, setConnecting] = useState(false);
 
   const readStatus = useCallback(async () => {
@@ -134,20 +177,29 @@ export const RedNoteConnectionSetup: FC<{
     };
   }, [status, readStatus]);
 
-  const startLogin = useCallback(async () => {
-    setStarting(true);
+  const startLogin = useCallback(async (visible = false) => {
+    if (visible) {
+      setStartingVisible(true);
+    } else {
+      setStarting(true);
+    }
     setStatus('running');
     setQrCode(undefined);
     setExpiresAt(undefined);
+    setViewUrl(undefined);
     setLoginState(undefined);
     setOtpCode('');
     setOtpAttempts(0);
     setAgentUi(undefined);
-    setMessage('Installing verified RedNote tools if needed…');
+    setMessage(
+      visible
+        ? 'Opening a live browser you can drive by hand…'
+        : 'Installing verified RedNote tools if needed…'
+    );
     try {
       const response = await fetch('/integrations/rednote/login/start', {
         method: 'POST',
-        body: JSON.stringify(configuration),
+        body: JSON.stringify({ ...configuration, visible }),
       });
       const data = (await response.json()) as SetupResponse;
       if (!response.ok) {
@@ -164,6 +216,7 @@ export const RedNoteConnectionSetup: FC<{
       setOtpMaxAttempts(data.otpMaxAttempts || 3);
       setAgentEnabled(Boolean(data.agentEnabled));
       setAgentUi(data.agentUi);
+      setViewUrl(data.viewUrl);
     } catch (error) {
       setStatus('error');
       setMessage(
@@ -173,6 +226,7 @@ export const RedNoteConnectionSetup: FC<{
       );
     } finally {
       setStarting(false);
+      setStartingVisible(false);
     }
   }, [configuration, fetch]);
 
@@ -325,6 +379,21 @@ export const RedNoteConnectionSetup: FC<{
             </div>
           </div>
         ) : null}
+        {viewUrl && status === 'running' ? (
+          <div className="flex flex-col gap-[8px] rounded-[8px] border border-tableBorder p-[8px]">
+            <div className="text-[12px] text-textColor/70">
+              Live browser — scan the QR shown here, and if Xiaohongshu asks for
+              an SMS code, click the field and type it directly in this window.
+              VNC password if prompted: ask your admin.
+            </div>
+            <iframe
+              src={viewUrl}
+              title="RedNote live login browser"
+              className="h-[560px] w-full rounded-[6px] border border-newTableBorder bg-black"
+              allow="clipboard-read; clipboard-write"
+            />
+          </div>
+        ) : null}
         {showQr && qrCode ? (
           <div className="flex flex-col items-center gap-[8px] rounded-[8px] bg-white p-[14px]">
             <img
@@ -383,8 +452,27 @@ export const RedNoteConnectionSetup: FC<{
               className="h-[42px] rounded-[8px] border border-newTableBorder bg-newBgColorInner px-[16px] text-center text-[20px] tracking-[0.35em] text-textColor outline-none disabled:opacity-60"
             />
             <div className="flex items-center justify-between gap-[10px]">
-              <div className="text-[11px] text-textColor/60">
-                Attempts: {otpAttempts}/{otpMaxAttempts}
+              <div className="flex items-center gap-[10px] text-[11px] text-textColor/60">
+                <span>
+                  Attempts: {otpAttempts}/{otpMaxAttempts}
+                </span>
+                <button
+                  type="button"
+                  onClick={resendOtp}
+                  disabled={
+                    loginState !== 'otp_required' ||
+                    resendingOtp ||
+                    submittingOtp ||
+                    resendCooldown > 0
+                  }
+                  className="underline disabled:no-underline disabled:opacity-60"
+                >
+                  {resendingOtp
+                    ? 'Resending…'
+                    : resendCooldown > 0
+                    ? `Resend code (${resendCooldown}s)`
+                    : "Didn't get the SMS? Resend code"}
+                </button>
               </div>
               <Button
                 type="submit"
@@ -400,20 +488,31 @@ export const RedNoteConnectionSetup: FC<{
             </div>
           </form>
         ) : null}
-        <Button
-          type="button"
-          onClick={startLogin}
-          loading={starting}
-          disabled={starting || connecting || status === 'running'}
-        >
-          {status === 'running'
-            ? 'Login Session Active'
-            : status === 'success'
-            ? 'Log in with Another Account'
-            : agentUi?.primaryAction === 'restart'
-            ? 'Start New Login Session'
-            : 'Get Xiaohongshu QR Code'}
-        </Button>
+        <div className="flex flex-col gap-[8px]">
+          <Button
+            type="button"
+            onClick={() => startLogin(false)}
+            loading={starting}
+            disabled={starting || startingVisible || connecting || status === 'running'}
+          >
+            {status === 'running'
+              ? 'Login Session Active'
+              : status === 'success'
+              ? 'Log in with Another Account'
+              : agentUi?.primaryAction === 'restart'
+              ? 'Start New Login Session'
+              : 'Get Xiaohongshu QR Code'}
+          </Button>
+          <Button
+            type="button"
+            secondary
+            onClick={() => startLogin(true)}
+            loading={startingVisible}
+            disabled={starting || startingVisible || connecting || status === 'running'}
+          >
+            Log in with live browser (manual scan &amp; SMS)
+          </Button>
+        </div>
       </section>
 
       <section className="rounded-[8px] border border-tableBorder p-[16px] flex flex-col gap-[10px]">

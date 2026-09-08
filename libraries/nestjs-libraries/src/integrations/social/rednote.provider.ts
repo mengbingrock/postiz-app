@@ -107,6 +107,7 @@ type InteractiveLogin = {
   agentDecision?: Promise<void>;
   agentAbort?: AbortController;
   cancelled?: boolean;
+  viewUrl?: string;
 };
 const interactiveLogins = new Map<string, InteractiveLogin>();
 const PROFILE_ID_PATTERN = /^[a-f0-9]{24}$/;
@@ -304,7 +305,8 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
 
   async startInteractiveLogin(
     key: string,
-    value?: Partial<RedNoteCredentials>
+    value?: Partial<RedNoteCredentials>,
+    visible = false
   ) {
     const previous = interactiveLogins.get(key);
     if (previous?.status === 'running') {
@@ -358,14 +360,14 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       const result = await this.callMcpToolResult(
         credentials,
         'get_login_qrcode',
-        {},
+        visible ? { visible: true } : {},
         90_000
       );
       const image = result.content.find(
         (item) => item.type === 'image' && item.data
       );
       const qrCode = this.mcpImageDataUrl(image);
-      if (!qrCode) {
+      if (!qrCode && !visible) {
         throw new Error(result.text || 'RedNote MCP did not return a QR code.');
       }
       const loginSessionId = result.text.match(LOGIN_SESSION_ID_PATTERN)?.[1];
@@ -375,12 +377,15 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         );
       }
 
+      const viewUrl = visible ? this.vncViewUrl() : undefined;
       const state: InteractiveLogin = {
         status: 'running',
-        message:
-          'Scan this QR code with the Xiaohongshu app and approve the login.',
+        message: visible
+          ? 'Live browser ready. Scan the QR in the embedded window; if asked, type the SMS code there.'
+          : 'Scan this QR code with the Xiaohongshu app and approve the login.',
         credentials,
         loginSessionId,
+        viewUrl,
         loginState: 'waiting_for_scan',
         otpAttempts: 0,
         otpMaxAttempts: 3,
@@ -412,6 +417,16 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     }
   }
 
+  // vncViewUrl is the embedded noVNC page for the live-browser login. The
+  // display is served behind the same origin (Caddy /novnc/*). Overridable so
+  // non-truegrit deployments can point elsewhere.
+  private vncViewUrl() {
+    return (
+      process.env.REDNOTE_VNC_VIEW_URL ||
+      'https://post.truegrit.dev/novnc/vnc.html?path=novnc/websockify&autoconnect=true&resize=scale&reconnect=true'
+    );
+  }
+
   private loginStatusResponse(state: InteractiveLogin) {
     return {
       status: state.status,
@@ -428,6 +443,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         ? { otpMaxAttempts: state.otpMaxAttempts }
         : {}),
       otpRequired: state.loginState === 'otp_required',
+      ...(state.viewUrl ? { viewUrl: state.viewUrl } : {}),
       ...(state.agentUi ? { agentUi: state.agentUi } : {}),
       agentEnabled: this.loginAgent.isEnabled(),
     };
@@ -685,6 +701,36 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       otpMaxAttempts: attempts ? Number(attempts[2]) : 3,
       lastError,
     };
+  }
+
+  /**
+   * Clicks the SMS modal's resend control on the retained login page. Only
+   * valid while Xiaohongshu is asking for a code; the MCP reports a cooldown
+   * if the control is counting down.
+   */
+  async resendInteractiveLoginCode(key: string) {
+    const state = interactiveLogins.get(key);
+    if (
+      !state ||
+      state.status !== 'running' ||
+      !state.credentials ||
+      !state.loginSessionId
+    ) {
+      throw new Error('The RedNote login session is no longer active.');
+    }
+    if (state.loginState !== 'otp_required') {
+      throw new Error(
+        'Xiaohongshu is not currently requesting a verification code.'
+      );
+    }
+    const output = await this.callMcpTool(
+      state.credentials,
+      'resend_login_code',
+      { session_id: state.loginSessionId },
+      30_000
+    );
+    state.message = output.trim() || 'Verification code resent.';
+    return this.loginStatusResponse(state);
   }
 
   async submitInteractiveLoginCode(key: string, code: string) {
