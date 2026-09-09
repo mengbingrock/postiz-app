@@ -4,6 +4,8 @@ import {
   allowedHost,
   chineseInLAProxyConfigured,
   EgressRelayService,
+  redNoteProxyConfigured,
+  redNoteProxyDevice,
   validChineseInLALoginDocument,
 } from './egress.relay.service';
 
@@ -15,6 +17,13 @@ test('Postiz egress destination allowlist permits only expected hosts', () => {
     'c3.nychinaren.com',
     'C3.NYCHINAREN.COM.',
     'api.ipify.org',
+    'xiaohongshu.com',
+    'www.xiaohongshu.com',
+    'creator.xiaohongshu.com',
+    'edith.xiaohongshu.com',
+    'sns-img-qc.xhscdn.com',
+    'creator.rednote.com',
+    'xhslink.com',
   ]) {
     assert.equal(allowedHost(host), true, host);
   }
@@ -26,11 +35,95 @@ test('Postiz egress destination allowlist permits only expected hosts', () => {
     'evil.nychinaren.com',
     'c3.nychinaren.com.attacker.example',
     'ipify.org',
+    'xiaohongshu.com.attacker.example',
+    'notxiaohongshu.com',
+    'xhscdn.com.evil.example',
     'localhost',
     '127.0.0.1',
   ]) {
     assert.equal(allowedHost(host), false, host);
   }
+});
+
+test('RedNote proxy routing is enabled only by REDNOTE_PROXY', () => {
+  assert.equal(redNoteProxyConfigured(undefined), false);
+  assert.equal(redNoteProxyConfigured('  '), false);
+  assert.equal(redNoteProxyConfigured('local'), true);
+  assert.equal(redNoteProxyDevice(undefined), undefined);
+  assert.equal(redNoteProxyDevice(' '), undefined);
+  assert.equal(redNoteProxyDevice(' martin-mac '), 'martin-mac');
+});
+
+test('RedNote lease falls back to the pinned REDNOTE_PROXY_DEVICE', async () => {
+  const previous = process.env.REDNOTE_PROXY_DEVICE;
+  process.env.REDNOTE_PROXY_DEVICE = 'martin-mac';
+  try {
+    const relay = new EgressRelayService();
+    const devices: Array<string | undefined> = [];
+    relay.startLease = async (_organizationId, deviceId) => {
+      devices.push(deviceId);
+      return { connectorOnline: true, devices: [], lease: null };
+    };
+    relay.status = () => ({ connectorOnline: true, devices: [], lease: null });
+    (relay as any).httpsGetThroughProxy = async () => 'User-agent: *\n';
+
+    await relay.ensureRedNoteLease('org');
+    await relay.ensureRedNoteLease('org', 'carl-air');
+    assert.deepEqual(devices, ['martin-mac', 'carl-air']);
+  } finally {
+    if (previous === undefined) delete process.env.REDNOTE_PROXY_DEVICE;
+    else process.env.REDNOTE_PROXY_DEVICE = previous;
+  }
+});
+
+test('RedNote lease probes Xiaohongshu through the tenant proxy', async () => {
+  const relay = new EgressRelayService();
+  const events: string[] = [];
+  relay.startLease = async (organizationId, deviceId, ttl) => {
+    events.push(`start:${organizationId}:${deviceId}:${ttl}`);
+    return { connectorOnline: true, devices: [], lease: null };
+  };
+  relay.status = (organizationId) => {
+    events.push(`status:${organizationId}`);
+    return { connectorOnline: true, devices: [], lease: null };
+  };
+  (relay as any).httpsGetThroughProxy = async (
+    organizationId: string,
+    host: string,
+    path: string
+  ) => {
+    events.push(`probe:${organizationId}:${host}:${path}`);
+    return 'User-agent: Googlebot\nDisallow: /\n';
+  };
+
+  const result = await relay.ensureRedNoteLease('org', 'mac', 15);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(events, [
+    'start:org:mac:15',
+    'probe:org:www.xiaohongshu.com:/robots.txt',
+    'status:org',
+  ]);
+});
+
+test('RedNote lease is stopped when its probe fails', async () => {
+  const relay = new EgressRelayService();
+  const events: string[] = [];
+  relay.startLease = async () =>
+    ({}) as Awaited<ReturnType<EgressRelayService['startLease']>>;
+  relay.stopLease = (organizationId, reason) => {
+    events.push(`stop:${organizationId}:${reason}`);
+    return { connectorOnline: false, devices: [], lease: null };
+  };
+  (relay as any).httpsGetThroughProxy = async () => {
+    throw new Error('ERR_TUNNEL_CONNECTION_FAILED');
+  };
+
+  await assert.rejects(
+    relay.ensureRedNoteLease('org', 'mac', 10),
+    /could not reach Xiaohongshu/
+  );
+  assert.deepEqual(events, ['stop:org:rednote_probe_failed']);
 });
 
 test('ChineseInLA egress probe requires both credential fields', () => {

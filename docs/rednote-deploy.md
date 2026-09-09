@@ -155,6 +155,39 @@ the default button.
 - x11vnc/noVNC bind to `127.0.0.1` only; exposure is solely via the authenticated
   Caddy path. Never bind them to `0.0.0.0`.
 
+## Local egress proxy for RedNote (`REDNOTE_PROXY`)
+
+Xiaohongshu risk control keys on the IP the browser comes from; a cloud egress
+IP is a liability. Like ChineseInLA (`CHINESEINLA_PROXY`), RedNote can route
+its browser through the operator's own machine:
+
+```
+MCP browser ──http://127.0.0.1:<org port>──▶ backend EgressRelayService
+   ──WebSocket /api/egress/connect──▶ postiz-mcp serve (operator laptop) ──▶ xiaohongshu.com
+```
+
+- Enable with `REDNOTE_PROXY=local` in `/opt/postiz/app/.env` (restart the
+  backend). Unset ⇒ direct, previous behaviour. Pin the connector with
+  `REDNOTE_PROXY_DEVICE=<device id>` when several teammates run `postiz-mcp`
+  in the same org — otherwise a publish (which carries no device choice) uses
+  whichever connector is first.
+- A `postiz-mcp serve` / `postiz-mcp connector` (client ≥ 0.1.5) must be online
+  for the organization; `GET /integrations/rednote/egress/status` (and the
+  status line in the RedNote connect dialog) shows the devices.
+- Before each RedNote operation the backend starts/renews a lease (15 min for
+  login, 10 min otherwise), probes `www.xiaohongshu.com/robots.txt` through it, and
+  calls the MCP tool `set_proxy {proxy_url}` on the profile's child; the next
+  browser that child opens (login or publish) uses the proxy. Covered: channel
+  check, login start, MCP setup/authenticate, provider functions, and `now`
+  posts from the chat/MCP tools. A post scheduled for later runs after the
+  lease expired and will fail through the proxy — same limitation as
+  ChineseInLA; publish "now" or renew the lease (`postiz-mcp proxy start`).
+- Relay allowlist (server *and* client): `*.xiaohongshu.com`, `*.xhscdn.com`,
+  `*.rednote.com`, `*.xhslink.com`, `*.xhs.cn`, port 443 only. A refused host
+  is logged as `Egress proxy refused <host>:<port>` in the backend log.
+- Keep the same route once an account is connected — switching between the
+  laptop IP and the cloud IP is exactly what trips risk control.
+
 ## Client: `post-truegrit-mcp` (install on a workstation)
 
 ```bash

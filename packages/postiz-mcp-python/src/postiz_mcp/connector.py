@@ -18,13 +18,28 @@ MAX_FRAME_BYTES = 1024 * 1024
 CONNECTOR_LOCK_RETRY_SECONDS = 2
 
 
+# Xiaohongshu / RedNote first-party hosts (web + creator SPAs, API hosts, the
+# xhscdn media CDN). Must match the server relay allowlist.
+REDNOTE_HOST_SUFFIXES = (
+    "xiaohongshu.com",
+    "xhscdn.com",
+    "rednote.com",
+    "xhslink.com",
+    "xhs.cn",
+)
+
+
+def _host_matches_suffix(host: str, suffix: str) -> bool:
+    return host == suffix or host.endswith("." + suffix)
+
+
 def _is_allowed_egress_host(host: str) -> bool:
     normalized = host.lower().rstrip(".")
     return (
-        normalized == "chineseinla.com"
-        or normalized.endswith(".chineseinla.com")
+        _host_matches_suffix(normalized, "chineseinla.com")
         or normalized == "c3.nychinaren.com"
         or normalized == "api.ipify.org"
+        or any(_host_matches_suffix(normalized, suffix) for suffix in REDNOTE_HOST_SUFFIXES)
     )
 
 

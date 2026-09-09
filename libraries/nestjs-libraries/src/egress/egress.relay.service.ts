@@ -31,13 +31,29 @@ const MAX_HEADER_BYTES = 16 * 1024;
 const MAX_FRAME_BYTES = 1024 * 1024;
 const DEFAULT_PROXY_PORT = 18443;
 
+// Xiaohongshu / RedNote properties the headless browser talks to: the web
+// and creator SPAs, their API hosts (edith/ark/ros-upload…) and the xhscdn
+// image/video CDN. Keep in sync with the Python connector's allowlist.
+const REDNOTE_HOST_SUFFIXES = [
+  'xiaohongshu.com',
+  'xhscdn.com',
+  'rednote.com',
+  'xhslink.com',
+  'xhs.cn',
+];
+
+const hostMatchesSuffix = (host: string, suffix: string) =>
+  host === suffix || host.endsWith(`.${suffix}`);
+
 const allowedHost = (host: string) => {
   const normalized = host.toLowerCase().replace(/\.$/, '');
   return (
-    normalized === 'chineseinla.com' ||
-    normalized.endsWith('.chineseinla.com') ||
+    hostMatchesSuffix(normalized, 'chineseinla.com') ||
     normalized === 'c3.nychinaren.com' ||
-    normalized === 'api.ipify.org'
+    normalized === 'api.ipify.org' ||
+    REDNOTE_HOST_SUFFIXES.some((suffix) =>
+      hostMatchesSuffix(normalized, suffix)
+    )
   );
 };
 
@@ -45,9 +61,21 @@ const validChineseInLALoginDocument = (html: string) =>
   /<input\b[^>]*\bname\s*=\s*["']username["'][^>]*>/i.test(html) &&
   /<input\b[^>]*\bname\s*=\s*["']password["'][^>]*>/i.test(html);
 
+// robots.txt is ~500 bytes; the SPA pages exceed the probe's 64 KB cap.
+const validRedNoteDocument = (body: string) =>
+  /user-agent|xiaohongshu|rednote/i.test(body);
+
 const chineseInLAProxyConfigured = (
   value = process.env.CHINESEINLA_PROXY
 ) => Boolean(value?.trim());
+
+const redNoteProxyConfigured = (value = process.env.REDNOTE_PROXY) =>
+  Boolean(value?.trim());
+
+// Optional pin so publishes (which carry no device choice) never fall through
+// to whichever connector happens to be first when several are online.
+const redNoteProxyDevice = (value = process.env.REDNOTE_PROXY_DEVICE) =>
+  value?.trim() || undefined;
 
 @Injectable()
 export class EgressRelayService implements OnModuleDestroy {
@@ -279,6 +307,38 @@ export class EgressRelayService implements OnModuleDestroy {
     }
   }
 
+  async ensureRedNoteLease(
+    organizationId: string,
+    requestedDeviceId?: string,
+    ttlMinutes = 10
+  ) {
+    await this.startLease(
+      organizationId,
+      requestedDeviceId || redNoteProxyDevice(),
+      ttlMinutes
+    );
+    try {
+      const body = await this.httpsGetThroughProxy(
+        organizationId,
+        'www.xiaohongshu.com',
+        '/robots.txt'
+      );
+      if (!validRedNoteDocument(body)) {
+        throw new Error(
+          'Xiaohongshu returned an unexpected page through the local route.'
+        );
+      }
+      return { ok: true, ...this.status(organizationId) };
+    } catch (error) {
+      this.stopLease(organizationId, 'rednote_probe_failed');
+      const reason =
+        error instanceof Error ? error.message : 'Unknown proxy failure.';
+      throw new Error(
+        `The local egress connector could not reach Xiaohongshu. ${reason}`
+      );
+    }
+  }
+
   async withChineseInLALease<T>(
     organizationId: string,
     operation: () => Promise<T>,
@@ -439,6 +499,9 @@ export class EgressRelayService implements OnModuleDestroy {
       const host = match[1];
       const port = Number(match[2]);
       if (!allowedHost(host) || port !== 443) {
+        // Logged so a missing first-party host shows up in the backend log
+        // instead of as a silent broken page in the browser.
+        this.logger.warn(`Egress proxy refused ${host}:${port}`);
         socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
         return;
       }
@@ -621,5 +684,8 @@ export class EgressRelayService implements OnModuleDestroy {
 export {
   allowedHost,
   chineseInLAProxyConfigured,
+  redNoteProxyConfigured,
+  redNoteProxyDevice,
   validChineseInLALoginDocument,
+  validRedNoteDocument,
 };

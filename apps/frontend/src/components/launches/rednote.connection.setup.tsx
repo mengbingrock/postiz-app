@@ -49,6 +49,20 @@ type Variable = {
   defaultValue?: string;
 };
 
+type EgressDevice = {
+  deviceId: string;
+  connectedAt: string;
+};
+
+type EgressResponse = {
+  enabled?: boolean;
+  connectorOnline?: boolean;
+  devices?: EgressDevice[];
+  message?: string | string[];
+};
+
+type EgressState = 'disabled' | 'checking' | 'online' | 'offline' | 'failed';
+
 const responseError = (data: SetupResponse, fallback: string) =>
   Array.isArray(data.message)
     ? data.message.join(', ')
@@ -128,6 +142,60 @@ export const RedNoteConnectionSetup: FC<{
     }
   }, []);
   const [connecting, setConnecting] = useState(false);
+  const [egressState, setEgressState] = useState<EgressState>('checking');
+  const [egressMessage, setEgressMessage] = useState('');
+  const [egressDevices, setEgressDevices] = useState<EgressDevice[]>([]);
+  const [deviceId, setDeviceId] = useState('');
+
+  // Same local-connector route as ChineseInLA; the server only enables it with
+  // REDNOTE_PROXY, so stay silent unless the deployment opted in.
+  const readEgressStatus = useCallback(async () => {
+    setEgressState('checking');
+    try {
+      const response = await fetch('/integrations/rednote/egress/status');
+      const data = (await response.json()) as EgressResponse;
+      if (!response.ok) {
+        throw new Error(
+          Array.isArray(data.message)
+            ? data.message.join(', ')
+            : data.message || 'Unable to check the local connector.'
+        );
+      }
+      if (!data.enabled) {
+        setEgressState('disabled');
+        return;
+      }
+      const devices = data.devices || [];
+      setEgressDevices(devices);
+      setDeviceId((current) =>
+        devices.some((device) => device.deviceId === current)
+          ? current
+          : devices[0]?.deviceId || ''
+      );
+      if (data.connectorOnline && devices.length) {
+        setEgressState('online');
+        setEgressMessage(
+          'Local connector online. Xiaohongshu traffic will be routed through your machine while you log in and publish.'
+        );
+      } else {
+        setEgressState('offline');
+        setEgressMessage(
+          'Local connector is offline. Start `postiz-mcp serve` on your machine, then check again.'
+        );
+      }
+    } catch (error) {
+      setEgressState('failed');
+      setEgressMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to check the local connector.'
+      );
+    }
+  }, [fetch]);
+
+  useEffect(() => {
+    void readEgressStatus();
+  }, [readEgressStatus]);
 
   const readStatus = useCallback(async () => {
     const response = await fetch('/integrations/rednote/login/status');
@@ -199,7 +267,11 @@ export const RedNoteConnectionSetup: FC<{
     try {
       const response = await fetch('/integrations/rednote/login/start', {
         method: 'POST',
-        body: JSON.stringify({ ...configuration, visible }),
+        body: JSON.stringify({
+          ...configuration,
+          visible,
+          ...(deviceId ? { deviceId } : {}),
+        }),
       });
       const data = (await response.json()) as SetupResponse;
       if (!response.ok) {
@@ -228,7 +300,7 @@ export const RedNoteConnectionSetup: FC<{
       setStarting(false);
       setStartingVisible(false);
     }
-  }, [configuration, fetch]);
+  }, [configuration, deviceId, fetch]);
 
   const submitOtp = useCallback(async () => {
     if (!/^\d{6}$/.test(otpCode)) {
@@ -359,6 +431,51 @@ export const RedNoteConnectionSetup: FC<{
             </div>
           </div>
         </div>
+        {egressState !== 'disabled' ? (
+          <div className="rounded-[8px] border border-tableBorder p-[10px]">
+            <div className="flex items-center justify-between gap-[12px]">
+              <div className="text-[12px] font-semibold">
+                Local network route
+              </div>
+              <button
+                type="button"
+                disabled={egressState === 'checking' || starting || startingVisible}
+                onClick={() => void readEgressStatus()}
+                className="text-[12px] text-primary disabled:opacity-50"
+              >
+                {egressState === 'checking' ? 'Checking…' : 'Check again'}
+              </button>
+            </div>
+            <p
+              className={`mt-[4px] text-[12px] ${
+                egressState === 'offline' || egressState === 'failed'
+                  ? 'text-red-500'
+                  : 'text-textColor/65'
+              }`}
+            >
+              {egressState === 'checking'
+                ? 'Checking for a local Postiz connector…'
+                : egressMessage}
+            </p>
+            {egressDevices.length > 1 ? (
+              <label className="mt-[8px] flex flex-col gap-[4px] text-[12px]">
+                <span>Local connector</span>
+                <select
+                  value={deviceId}
+                  disabled={starting || startingVisible}
+                  onChange={(event) => setDeviceId(event.target.value)}
+                  className="h-[36px] rounded-[6px] border border-newTableBorder bg-newBgColorInner px-[10px] text-textColor outline-none"
+                >
+                  {egressDevices.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.deviceId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+        ) : null}
         {agentUi ? (
           <div
             className={`rounded-[8px] border p-[12px] ${agentToneClass}`}

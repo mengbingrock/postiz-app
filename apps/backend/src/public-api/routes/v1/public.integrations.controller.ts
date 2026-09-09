@@ -72,8 +72,10 @@ import { createAndUploadVideoThumbnail } from '@gitroom/nestjs-libraries/upload/
 import {
   chineseInLAProxyConfigured,
   EgressRelayService,
+  redNoteProxyConfigured,
 } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 
 @ApiTags('Public API')
 @Controller('/public/v1')
@@ -634,6 +636,26 @@ export class PublicIntegrationsController {
             );
           }
           await (integrationProvider as ChineseInLAProvider).configureEgress(
+            getIntegration.token,
+            proxyUrl
+          );
+        }
+        if (
+          getIntegration.providerIdentifier === 'rednote' &&
+          redNoteProxyConfigured()
+        ) {
+          const egress = await this._egressRelayService.ensureRedNoteLease(
+            org.id,
+            undefined,
+            10
+          );
+          const proxyUrl = egress.lease?.proxyUrl;
+          if (!proxyUrl) {
+            throw new Error(
+              'Postiz did not allocate a tenant-specific RedNote proxy.'
+            );
+          }
+          await (integrationProvider as RedNoteProvider).configureEgress(
             getIntegration.token,
             proxyUrl
           );

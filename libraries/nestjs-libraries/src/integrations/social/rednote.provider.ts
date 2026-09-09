@@ -303,10 +303,48 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return credentials;
   }
 
+  // Point the profile's MCP browser at the organization's loopback egress
+  // proxy (a Postiz local-connector lease) so Xiaohongshu sees the operator's
+  // residential IP instead of the cloud host. Mirrors ChineseInLA.
+  private async configureRedNoteProxy(
+    credentials: RedNoteCredentials,
+    proxyUrl: string
+  ) {
+    const parsed = new URL(proxyUrl);
+    if (
+      parsed.protocol !== 'http:' ||
+      parsed.hostname !== '127.0.0.1' ||
+      !parsed.port ||
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== '/' ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      throw new Error(
+        'Postiz returned an invalid tenant-specific RedNote proxy URL.'
+      );
+    }
+    await this.callMcpTool(
+      credentials,
+      'set_proxy',
+      { proxy_url: proxyUrl },
+      30_000
+    );
+  }
+
+  async configureEgress(accessToken: string, proxyUrl: string) {
+    await this.configureRedNoteProxy(
+      this.decodeCredentials(accessToken),
+      proxyUrl
+    );
+  }
+
   async startInteractiveLogin(
     key: string,
     value?: Partial<RedNoteCredentials>,
-    visible = false
+    visible = false,
+    proxyUrl?: string
   ) {
     const previous = interactiveLogins.get(key);
     if (previous?.status === 'running') {
@@ -354,6 +392,9 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       // A first-time connection has no existing cookie to preserve.
     }
     try {
+      if (proxyUrl) {
+        await this.configureRedNoteProxy(credentials, proxyUrl);
+      }
       if (hasCookieBackup) {
         await this.callMcpTool(credentials, 'delete_cookies', {}, 30_000);
       }
@@ -803,10 +844,17 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     return this.loginStatusResponse(state);
   }
 
-  async startMcpForSetup(key: string, value?: Partial<RedNoteCredentials>) {
+  async startMcpForSetup(
+    key: string,
+    value?: Partial<RedNoteCredentials>,
+    proxyUrl?: string
+  ) {
     const credentials =
       interactiveLogins.get(key)?.credentials ||
       (await this.setupIsolatedCredentials(key, value));
+    if (proxyUrl) {
+      await this.configureRedNoteProxy(credentials, proxyUrl);
+    }
     const output = await this.callMcpTool(
       credentials,
       'check_login_status',

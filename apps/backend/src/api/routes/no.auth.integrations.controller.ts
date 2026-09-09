@@ -27,8 +27,10 @@ import { getSsrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/s
 import {
   chineseInLAProxyConfigured,
   EgressRelayService,
+  redNoteProxyConfigured,
 } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 
 @ApiTags('Integrations')
 @Controller('/integrations')
@@ -158,6 +160,23 @@ export class NoAuthIntegrationsController {
               'chineseinla_operation_finished'
             );
           }
+        } else if (integration === 'rednote' && redNoteProxyConfigured()) {
+          const egress = await this._egressRelayService.ensureRedNoteLease(
+            org.id,
+            undefined,
+            10
+          );
+          const proxyUrl = egress.lease?.proxyUrl;
+          if (!proxyUrl) {
+            throw new Error(
+              'Postiz did not allocate a tenant-specific RedNote proxy.'
+            );
+          }
+          await (integrationProvider as RedNoteProvider).configureEgress(
+            body.code,
+            proxyUrl
+          );
+          auth = await authenticate();
         } else {
           auth = await authenticate();
         }

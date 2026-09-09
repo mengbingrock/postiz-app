@@ -60,6 +60,7 @@ import {
 import {
   chineseInLAProxyConfigured,
   EgressRelayService,
+  redNoteProxyConfigured,
 } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 
 type ChannelCheckStatus =
@@ -122,6 +123,38 @@ export class IntegrationsController {
       );
     }
     await this.chineseInLAProvider().configureEgress(accessToken, proxyUrl);
+  }
+
+  // Returns the tenant proxy URL to hand to the RedNote MCP, or undefined
+  // when REDNOTE_PROXY is not enabled on this deployment.
+  private async redNoteEgressProxyUrl(
+    organizationId: string,
+    deviceId?: string,
+    ttlMinutes = 10
+  ) {
+    if (!redNoteProxyConfigured()) return undefined;
+    const status = await this._egressRelayService.ensureRedNoteLease(
+      organizationId,
+      deviceId,
+      ttlMinutes
+    );
+    const proxyUrl = status.lease?.proxyUrl;
+    if (!proxyUrl) {
+      throw new Error(
+        'Postiz did not allocate a tenant-specific RedNote proxy.'
+      );
+    }
+    return proxyUrl;
+  }
+
+  private async configureRedNoteEgress(
+    organizationId: string,
+    accessToken: string,
+    deviceId?: string
+  ) {
+    const proxyUrl = await this.redNoteEgressProxyUrl(organizationId, deviceId);
+    if (!proxyUrl) return;
+    await this.redNoteProvider().configureEgress(accessToken, proxyUrl);
   }
 
   private redditAgentProvider() {
@@ -390,6 +423,12 @@ export class IntegrationsController {
     }
 
     try {
+      if (integration.providerIdentifier === 'rednote') {
+        await this.configureRedNoteEgress(
+          integration.organizationId,
+          integration.token
+        );
+      }
       if (
         integration.providerIdentifier === 'chineseinla' &&
         chineseInLAProxyConfigured()
@@ -769,13 +808,24 @@ export class IntegrationsController {
       mcpEndpoint?: string;
       profileName?: string;
       visible?: boolean;
+      deviceId?: string;
     }
   ) {
     try {
+      // QR scan + SMS can take a while; lease long enough to cover the
+      // extended login window instead of the default 10 minutes.
+      const proxyUrl = await this.redNoteEgressProxyUrl(
+        org.id,
+        typeof body?.deviceId === 'string' && body.deviceId.trim()
+          ? body.deviceId.trim()
+          : undefined,
+        15
+      );
       return await this.redNoteProvider().startInteractiveLogin(
         `${org.id}\0${user.id}`,
         body,
-        body?.visible === true
+        body?.visible === true,
+        proxyUrl
       );
     } catch (error) {
       throw new BadRequestException(
@@ -853,15 +903,27 @@ export class IntegrationsController {
     }
   ) {
     try {
+      const proxyUrl = await this.redNoteEgressProxyUrl(org.id);
       return await this.redNoteProvider().startMcpForSetup(
         `${org.id}\0${user.id}`,
-        body
+        body,
+        proxyUrl
       );
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : 'Unable to start RedNote MCP.'
       );
     }
+  }
+
+  @Get('/rednote/egress/status')
+  @Header('Cache-Control', 'no-store, private')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  redNoteEgressStatus(@GetOrgFromRequest() org: Organization) {
+    return {
+      enabled: redNoteProxyConfigured(),
+      ...this._egressRelayService.status(org.id),
+    };
   }
 
   @Post('/provider/:id/connect')
@@ -1332,6 +1394,9 @@ export class IntegrationsController {
           chineseInLAProxyConfigured()
         ) {
           await this.configureChineseInLAEgress(org.id, getIntegration.token);
+        }
+        if (getIntegration.providerIdentifier === 'rednote') {
+          await this.configureRedNoteEgress(org.id, getIntegration.token);
         }
         // @ts-ignore
         const load = await integrationProvider[body.name](

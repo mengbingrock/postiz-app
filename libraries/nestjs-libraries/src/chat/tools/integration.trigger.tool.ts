@@ -14,8 +14,10 @@ import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integration
 import {
   chineseInLAProxyConfigured,
   EgressRelayService,
+  redNoteProxyConfigured,
 } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 
 @Injectable()
 export class IntegrationTriggerTool implements AgentToolInterface {
@@ -128,6 +130,26 @@ export class IntegrationTriggerTool implements AgentToolInterface {
                 );
               }
               await (integrationProvider as ChineseInLAProvider).configureEgress(
+                getIntegration.token,
+                proxyUrl
+              );
+            }
+            if (
+              getIntegration.providerIdentifier === 'rednote' &&
+              redNoteProxyConfigured()
+            ) {
+              const egress = await this._egressRelayService.ensureRedNoteLease(
+                organizationId,
+                undefined,
+                10
+              );
+              const proxyUrl = egress.lease?.proxyUrl;
+              if (!proxyUrl) {
+                throw new Error(
+                  'Postiz did not allocate a tenant-specific RedNote proxy.'
+                );
+              }
+              await (integrationProvider as RedNoteProvider).configureEgress(
                 getIntegration.token,
                 proxyUrl
               );

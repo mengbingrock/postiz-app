@@ -26,6 +26,25 @@ class Writer:
 
 
 class ConnectorTest(unittest.IsolatedAsyncioTestCase):
+    async def test_rednote_first_party_hosts_are_allowed(self):
+        for host in (
+            "xiaohongshu.com",
+            "www.xiaohongshu.com",
+            "creator.xiaohongshu.com",
+            "EDITH.XIAOHONGSHU.COM.",
+            "sns-img-qc.xhscdn.com",
+            "creator.rednote.com",
+            "xhslink.com",
+        ):
+            self.assertTrue(_is_allowed_egress_host(host), host)
+        for host in (
+            "xiaohongshu.com.attacker.example",
+            "notxiaohongshu.com",
+            "xhscdn.com.evil.example",
+            "example.com",
+        ):
+            self.assertFalse(_is_allowed_egress_host(host), host)
+
     async def test_chineseinla_static_cdn_is_allowed_without_open_proxy_wildcards(self):
         self.assertTrue(_is_allowed_egress_host("c3.nychinaren.com"))
         self.assertTrue(_is_allowed_egress_host("C3.NYCHINAREN.COM."))

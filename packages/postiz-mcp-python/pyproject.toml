@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "post-truegrit-mcp"
-version = "0.1.4"
+version = "0.1.5"
 description = "Postiz MCP client with an opt-in local egress connector"
 readme = "README.md"
 requires-python = ">=3.9"

@@ -15,8 +15,10 @@ import {
 import {
   chineseInLAProxyConfigured,
   EgressRelayService,
+  redNoteProxyConfigured,
 } from '@gitroom/nestjs-libraries/egress/egress.relay.service';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { socialIntegrationList } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 
 const validUrlExtension = new ValidUrlExtension();
@@ -294,6 +296,33 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
               integration.token,
               proxyUrl
             );
+          }
+
+          if (
+            post.type === 'now' &&
+            integration.providerIdentifier === 'rednote' &&
+            redNoteProxyConfigured()
+          ) {
+            // Same as ChineseInLA: the lease must outlive the Temporal
+            // publish that follows, so start/renew it right before createPost.
+            const egress = await this._egressRelayService.ensureRedNoteLease(
+              organizationId,
+              undefined,
+              10
+            );
+            const proxyUrl = egress.lease?.proxyUrl;
+            if (!proxyUrl) {
+              throw new Error(
+                'Postiz did not allocate a tenant-specific RedNote proxy.'
+              );
+            }
+            const redNoteProvider = socialIntegrationList.find(
+              (provider) => provider.identifier === 'rednote'
+            ) as RedNoteProvider | undefined;
+            if (!redNoteProvider) {
+              throw new Error('RedNote provider is unavailable.');
+            }
+            await redNoteProvider.configureEgress(integration.token, proxyUrl);
           }
 
           const output = await this._postsService.createPost(organizationId, {
