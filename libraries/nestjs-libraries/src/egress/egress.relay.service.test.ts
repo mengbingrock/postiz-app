@@ -58,7 +58,7 @@ test('RedNote proxy routing is enabled only by REDNOTE_PROXY', () => {
   assert.equal(redNoteProxyDevice(' martin-mac '), 'martin-mac');
 });
 
-test('RedNote lease falls back to the pinned REDNOTE_PROXY_DEVICE', async () => {
+test('RedNote lease uses a pinned device only when it belongs to the organization', async () => {
   const previous = process.env.REDNOTE_PROXY_DEVICE;
   process.env.REDNOTE_PROXY_DEVICE = 'martin-mac';
   try {
@@ -68,7 +68,13 @@ test('RedNote lease falls back to the pinned REDNOTE_PROXY_DEVICE', async () => 
       devices.push(deviceId);
       return { connectorOnline: true, devices: [], lease: null };
     };
-    relay.status = () => ({ connectorOnline: true, devices: [], lease: null });
+    relay.status = () => ({
+      connectorOnline: true,
+      devices: [
+        { deviceId: 'martin-mac', connectedAt: new Date().toISOString() },
+      ],
+      lease: null,
+    });
     (relay as any).httpsGetThroughProxy = async () => 'User-agent: *\n';
 
     await relay.ensureRedNoteLease('org');
@@ -78,6 +84,57 @@ test('RedNote lease falls back to the pinned REDNOTE_PROXY_DEVICE', async () => 
     if (previous === undefined) delete process.env.REDNOTE_PROXY_DEVICE;
     else process.env.REDNOTE_PROXY_DEVICE = previous;
   }
+});
+
+test('RedNote lease ignores a global device pin from another organization', async () => {
+  const previous = process.env.REDNOTE_PROXY_DEVICE;
+  process.env.REDNOTE_PROXY_DEVICE = 'martin-mac';
+  try {
+    const relay = new EgressRelayService();
+    const devices: Array<string | undefined> = [];
+    relay.startLease = async (_organizationId, deviceId) => {
+      devices.push(deviceId);
+      return { connectorOnline: true, devices: [], lease: null };
+    };
+    relay.status = () => ({
+      connectorOnline: true,
+      devices: [
+        { deviceId: 'carl-air', connectedAt: new Date().toISOString() },
+      ],
+      lease: null,
+    });
+    (relay as any).httpsGetThroughProxy = async () => 'User-agent: *\n';
+
+    await relay.ensureRedNoteLease('another-org');
+    assert.deepEqual(devices, [undefined]);
+  } finally {
+    if (previous === undefined) delete process.env.REDNOTE_PROXY_DEVICE;
+    else process.env.REDNOTE_PROXY_DEVICE = previous;
+  }
+});
+
+test('an explicitly selected connector cannot cross organizations', async () => {
+  const relay = new EgressRelayService();
+  (relay as any).connectors.set(
+    'org-a',
+    new Map([
+      [
+        'martin-mac',
+        {
+          organizationId: 'org-a',
+          deviceId: 'martin-mac',
+          socket: { readyState: 1 },
+          connectedAt: new Date(),
+          streams: new Map(),
+        },
+      ],
+    ])
+  );
+
+  await assert.rejects(
+    relay.startLease('org-b', 'martin-mac'),
+    /selected local Postiz MCP connector is not online for this organization/
+  );
 });
 
 test('RedNote lease probes Xiaohongshu through the tenant proxy', async () => {
@@ -121,9 +178,14 @@ test('RedNote lease skips the probe while a recent one is still fresh', async ()
     createdAt: new Date(),
     expiresAt: new Date(Date.now() + 600_000),
     timer: setTimeout(() => undefined, 0),
+    probedAt: undefined as Date | undefined,
   };
   (relay as any).activeLeases.set('org', lease);
-  relay.startLease = async () => ({ connectorOnline: true, devices: [], lease: null });
+  relay.startLease = async () => ({
+    connectorOnline: true,
+    devices: [],
+    lease: null,
+  });
   relay.status = () => ({ connectorOnline: true, devices: [], lease: null });
   (relay as any).httpsGetThroughProxy = async () => {
     probes += 1;
@@ -144,7 +206,7 @@ test('RedNote lease is stopped when its probe fails', async () => {
   const relay = new EgressRelayService();
   const events: string[] = [];
   relay.startLease = async () =>
-    ({}) as Awaited<ReturnType<EgressRelayService['startLease']>>;
+    ({} as Awaited<ReturnType<EgressRelayService['startLease']>>);
   relay.stopLease = (organizationId, reason) => {
     events.push(`stop:${organizationId}:${reason}`);
     return { connectorOnline: false, devices: [], lease: null };
@@ -179,19 +241,13 @@ test('ChineseInLA egress probe requires both credential fields', () => {
     ),
     false
   );
-  assert.equal(
-    validChineseInLALoginDocument('<input name="username">'),
-    false
-  );
+  assert.equal(validChineseInLALoginDocument('<input name="username">'), false);
 });
 
 test('ChineseInLA local egress is required only when a proxy is configured', () => {
   assert.equal(chineseInLAProxyConfigured(undefined), false);
   assert.equal(chineseInLAProxyConfigured('   '), false);
-  assert.equal(
-    chineseInLAProxyConfigured('http://127.0.0.1:18443'),
-    true
-  );
+  assert.equal(chineseInLAProxyConfigured('http://127.0.0.1:18443'), true);
 });
 
 test('ChineseInLA lease starts before the login-page probe', async () => {
@@ -238,7 +294,7 @@ test('ChineseInLA lease is stopped when its probe fails', async () => {
   const relay = new EgressRelayService();
   const events: string[] = [];
   relay.startLease = async () =>
-    ({}) as Awaited<ReturnType<EgressRelayService['startLease']>>;
+    ({} as Awaited<ReturnType<EgressRelayService['startLease']>>);
   relay.stopLease = (organizationId, reason) => {
     events.push(`stop:${organizationId}:${reason}`);
     return {

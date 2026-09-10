@@ -79,9 +79,8 @@ const validChineseInLALoginDocument = (html: string) =>
 const validRedNoteDocument = (body: string) =>
   /user-agent|xiaohongshu|rednote/i.test(body);
 
-const chineseInLAProxyConfigured = (
-  value = process.env.CHINESEINLA_PROXY
-) => Boolean(value?.trim());
+const chineseInLAProxyConfigured = (value = process.env.CHINESEINLA_PROXY) =>
+  Boolean(value?.trim());
 
 const redNoteProxyConfigured = (value = process.env.REDNOTE_PROXY) =>
   Boolean(value?.trim());
@@ -182,6 +181,14 @@ export class EgressRelayService implements OnModuleDestroy {
       : currentLease
       ? devices?.get(currentLease.deviceId)
       : devices?.values().next().value;
+    if (
+      requestedDeviceId &&
+      (!connector || connector.socket.readyState !== WebSocket.OPEN)
+    ) {
+      throw new Error(
+        "The selected local Postiz MCP connector is not online for this organization. Refresh the connector list and select one of this organization's devices."
+      );
+    }
     if (!connector || connector.socket.readyState !== WebSocket.OPEN) {
       throw new Error(
         'No online local Postiz MCP connector is available for this organization.'
@@ -205,8 +212,7 @@ export class EgressRelayService implements OnModuleDestroy {
       );
       return this.status(organizationId);
     }
-    if (currentLease)
-      this.stopLease(organizationId, 'renewed');
+    if (currentLease) this.stopLease(organizationId, 'renewed');
     const endpoint = await this.ensureProxyEndpoint(organizationId);
     const lease: Lease = {
       id: randomUUID(),
@@ -276,11 +282,7 @@ export class EgressRelayService implements OnModuleDestroy {
       throw new Error('Start an egress proxy lease before testing it.');
     }
     const ip = (
-      await this.httpsGetThroughProxy(
-        organizationId,
-        'api.ipify.org',
-        '/'
-      )
+      await this.httpsGetThroughProxy(organizationId, 'api.ipify.org', '/')
     ).trim();
     if (!net.isIP(ip))
       throw new Error(
@@ -326,11 +328,16 @@ export class EgressRelayService implements OnModuleDestroy {
     requestedDeviceId?: string,
     ttlMinutes = 10
   ) {
-    await this.startLease(
-      organizationId,
-      requestedDeviceId || redNoteProxyDevice(),
-      ttlMinutes
-    );
+    const configuredDeviceId = redNoteProxyDevice();
+    const organizationDeviceId = requestedDeviceId
+      ? requestedDeviceId
+      : configuredDeviceId &&
+        this.status(organizationId).devices.some(
+          (device) => device.deviceId === configuredDeviceId
+        )
+      ? configuredDeviceId
+      : undefined;
+    await this.startLease(organizationId, organizationDeviceId, ttlMinutes);
     const lease = this.activeLeases.get(organizationId);
     if (
       lease?.probedAt &&
@@ -386,7 +393,8 @@ export class EgressRelayService implements OnModuleDestroy {
         connector.socket.close(1001, 'Backend shutting down');
     }
     this.proxyServer?.close();
-    for (const endpoint of this.proxyEndpoints.values()) endpoint.server.close();
+    for (const endpoint of this.proxyEndpoints.values())
+      endpoint.server.close();
   }
 
   private expireLeaseIfNeeded(organizationId?: string) {

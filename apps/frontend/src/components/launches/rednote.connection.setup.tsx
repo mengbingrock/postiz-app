@@ -180,7 +180,7 @@ export const RedNoteConnectionSetup: FC<{
       } else {
         setEgressState('offline');
         setEgressMessage(
-          'Local connector is offline. Start `postiz-mcp serve` on your machine, then check again.'
+          'Local connector is offline. Start `postiz-mcp connector` while signed in to this Postiz account, then check again.'
         );
       }
     } catch (error) {
@@ -245,62 +245,65 @@ export const RedNoteConnectionSetup: FC<{
     };
   }, [status, readStatus]);
 
-  const startLogin = useCallback(async (visible = false) => {
-    if (visible) {
-      setStartingVisible(true);
-    } else {
-      setStarting(true);
-    }
-    setStatus('running');
-    setQrCode(undefined);
-    setExpiresAt(undefined);
-    setViewUrl(undefined);
-    setLoginState(undefined);
-    setOtpCode('');
-    setOtpAttempts(0);
-    setAgentUi(undefined);
-    setMessage(
-      visible
-        ? 'Opening a live browser you can drive by hand…'
-        : 'Installing verified RedNote tools if needed…'
-    );
-    try {
-      const response = await fetch('/integrations/rednote/login/start', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...configuration,
-          visible,
-          ...(deviceId ? { deviceId } : {}),
-        }),
-      });
-      const data = (await response.json()) as SetupResponse;
-      if (!response.ok) {
-        throw new Error(
-          responseError(data, 'Unable to create the RedNote login QR code.')
-        );
+  const startLogin = useCallback(
+    async (visible = false) => {
+      if (visible) {
+        setStartingVisible(true);
+      } else {
+        setStarting(true);
       }
-      setStatus(data.status || 'running');
-      setMessage(responseError(data, 'Scan the Xiaohongshu login QR code.'));
-      setQrCode(data.qrCode);
-      setExpiresAt(data.expiresAt);
-      setLoginState(data.loginState);
-      setOtpAttempts(data.otpAttempts || 0);
-      setOtpMaxAttempts(data.otpMaxAttempts || 3);
-      setAgentEnabled(Boolean(data.agentEnabled));
-      setAgentUi(data.agentUi);
-      setViewUrl(data.viewUrl);
-    } catch (error) {
-      setStatus('error');
+      setStatus('running');
+      setQrCode(undefined);
+      setExpiresAt(undefined);
+      setViewUrl(undefined);
+      setLoginState(undefined);
+      setOtpCode('');
+      setOtpAttempts(0);
+      setAgentUi(undefined);
       setMessage(
-        error instanceof Error
-          ? error.message
-          : 'Unable to create the RedNote login QR code.'
+        visible
+          ? 'Opening a live browser you can drive by hand…'
+          : 'Installing verified RedNote tools if needed…'
       );
-    } finally {
-      setStarting(false);
-      setStartingVisible(false);
-    }
-  }, [configuration, deviceId, fetch]);
+      try {
+        const response = await fetch('/integrations/rednote/login/start', {
+          method: 'POST',
+          body: JSON.stringify({
+            ...configuration,
+            visible,
+            ...(deviceId ? { deviceId } : {}),
+          }),
+        });
+        const data = (await response.json()) as SetupResponse;
+        if (!response.ok) {
+          throw new Error(
+            responseError(data, 'Unable to create the RedNote login QR code.')
+          );
+        }
+        setStatus(data.status || 'running');
+        setMessage(responseError(data, 'Scan the Xiaohongshu login QR code.'));
+        setQrCode(data.qrCode);
+        setExpiresAt(data.expiresAt);
+        setLoginState(data.loginState);
+        setOtpAttempts(data.otpAttempts || 0);
+        setOtpMaxAttempts(data.otpMaxAttempts || 3);
+        setAgentEnabled(Boolean(data.agentEnabled));
+        setAgentUi(data.agentUi);
+        setViewUrl(data.viewUrl);
+      } catch (error) {
+        setStatus('error');
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : 'Unable to create the RedNote login QR code.'
+        );
+      } finally {
+        setStarting(false);
+        setStartingVisible(false);
+      }
+    },
+    [configuration, deviceId, fetch]
+  );
 
   const submitOtp = useCallback(async () => {
     if (!/^\d{6}$/.test(otpCode)) {
@@ -415,6 +418,8 @@ export const RedNoteConnectionSetup: FC<{
       : agentUi?.tone === 'warning'
       ? 'border-orange-500/40 bg-orange-500/10'
       : 'border-tableBorder bg-newBgColorInner';
+  const egressUnavailable =
+    egressState !== 'disabled' && (egressState !== 'online' || !deviceId);
 
   return (
     <div className="flex flex-col gap-[14px] pt-[10px] min-w-[420px] max-w-[520px]">
@@ -439,7 +444,9 @@ export const RedNoteConnectionSetup: FC<{
               </div>
               <button
                 type="button"
-                disabled={egressState === 'checking' || starting || startingVisible}
+                disabled={
+                  egressState === 'checking' || starting || startingVisible
+                }
                 onClick={() => void readEgressStatus()}
                 className="text-[12px] text-primary disabled:opacity-50"
               >
@@ -457,21 +464,29 @@ export const RedNoteConnectionSetup: FC<{
                 ? 'Checking for a local Postiz connector…'
                 : egressMessage}
             </p>
-            {egressDevices.length > 1 ? (
+            {egressState !== 'checking' ? (
               <label className="mt-[8px] flex flex-col gap-[4px] text-[12px]">
-                <span>Local connector</span>
+                <span>Proxy connector for this Postiz account</span>
                 <select
                   value={deviceId}
-                  disabled={starting || startingVisible}
+                  disabled={
+                    starting || startingVisible || egressDevices.length === 0
+                  }
                   onChange={(event) => setDeviceId(event.target.value)}
                   className="h-[36px] rounded-[6px] border border-newTableBorder bg-newBgColorInner px-[10px] text-textColor outline-none"
                 >
+                  {egressDevices.length === 0 ? (
+                    <option value="">No online connector</option>
+                  ) : null}
                   {egressDevices.map((device) => (
                     <option key={device.deviceId} value={device.deviceId}>
                       {device.deviceId}
                     </option>
                   ))}
                 </select>
+                <span className="text-[11px] text-textColor/55">
+                  Only connectors authenticated to this organization are shown.
+                </span>
               </label>
             ) : null}
           </div>
@@ -610,7 +625,13 @@ export const RedNoteConnectionSetup: FC<{
             type="button"
             onClick={() => startLogin(false)}
             loading={starting}
-            disabled={starting || startingVisible || connecting || status === 'running'}
+            disabled={
+              starting ||
+              startingVisible ||
+              connecting ||
+              status === 'running' ||
+              egressUnavailable
+            }
           >
             {status === 'running'
               ? 'Login Session Active'
@@ -625,7 +646,13 @@ export const RedNoteConnectionSetup: FC<{
             secondary
             onClick={() => startLogin(true)}
             loading={startingVisible}
-            disabled={starting || startingVisible || connecting || status === 'running'}
+            disabled={
+              starting ||
+              startingVisible ||
+              connecting ||
+              status === 'running' ||
+              egressUnavailable
+            }
           >
             Log in with live browser (manual scan &amp; SMS)
           </Button>
