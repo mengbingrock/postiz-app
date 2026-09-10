@@ -110,6 +110,36 @@ test('RedNote lease probes Xiaohongshu through the tenant proxy', async () => {
   ]);
 });
 
+test('RedNote lease skips the probe while a recent one is still fresh', async () => {
+  const relay = new EgressRelayService();
+  let probes = 0;
+  const lease = {
+    id: 'l1',
+    organizationId: 'org',
+    deviceId: 'mac',
+    proxyPort: 1,
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 600_000),
+    timer: setTimeout(() => undefined, 0),
+  };
+  (relay as any).activeLeases.set('org', lease);
+  relay.startLease = async () => ({ connectorOnline: true, devices: [], lease: null });
+  relay.status = () => ({ connectorOnline: true, devices: [], lease: null });
+  (relay as any).httpsGetThroughProxy = async () => {
+    probes += 1;
+    return 'User-agent: *\n';
+  };
+
+  await relay.ensureRedNoteLease('org', 'mac');
+  await relay.ensureRedNoteLease('org', 'mac');
+  assert.equal(probes, 1, 'second call within the TTL reuses the probe');
+
+  lease.probedAt = new Date(Date.now() - 6 * 60_000);
+  await relay.ensureRedNoteLease('org', 'mac');
+  assert.equal(probes, 2, 'a stale probe is repeated');
+  clearTimeout(lease.timer);
+});
+
 test('RedNote lease is stopped when its probe fails', async () => {
   const relay = new EgressRelayService();
   const events: string[] = [];

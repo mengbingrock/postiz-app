@@ -196,6 +196,11 @@ MCP browser ──http://127.0.0.1:<org port>──▶ backend EgressRelayServic
   falls back to the home-page verdict if the creator page never renders.
   Diagnose with `cmd/creatorcheck` (`XHS_PROXY=http://127.0.0.1:<lease port>
   CREATORCHECK_TIMELINE_ONLY=1`), which prints a DOM timeline + screenshots.
+- "could not establish a proxy stream" = the connector did not open the TCP
+  stream in time (a busy headless browser queues new CONNECTs behind its
+  asset downloads on a saturated uplink). The relay allows 30 s per stream
+  open and 45 s for the probe, and a lease that was probed in the last
+  5 min is not re-probed, so overlapping clicks don't starve each other.
 
 ## Client: `post-truegrit-mcp` (install on a workstation)
 

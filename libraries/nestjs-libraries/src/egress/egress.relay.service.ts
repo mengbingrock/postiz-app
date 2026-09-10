@@ -20,7 +20,18 @@ type Lease = {
   createdAt: Date;
   expiresAt: Date;
   timer: NodeJS.Timeout;
+  // When the RedNote probe last succeeded on this lease; a fresh probe is
+  // skipped for a while so back-to-back operations do not re-probe through a
+  // connector that is already saturated by a headless browser.
+  probedAt?: Date;
 };
+
+const REDNOTE_PROBE_TTL_MS = 5 * 60_000;
+// Home uplinks are slow (~3 Mbps measured) and a busy browser can queue a new
+// CONNECT behind megabytes of assets, so give stream setup and the probe
+// generous budgets.
+const STREAM_OPEN_TIMEOUT_MS = 30_000;
+const PROBE_SOCKET_TIMEOUT_MS = 45_000;
 
 type ProxyEndpoint = {
   port: number;
@@ -320,6 +331,13 @@ export class EgressRelayService implements OnModuleDestroy {
       requestedDeviceId || redNoteProxyDevice(),
       ttlMinutes
     );
+    const lease = this.activeLeases.get(organizationId);
+    if (
+      lease?.probedAt &&
+      Date.now() - lease.probedAt.getTime() < REDNOTE_PROBE_TTL_MS
+    ) {
+      return { ok: true, ...this.status(organizationId) };
+    }
     try {
       const body = await this.httpsGetThroughProxy(
         organizationId,
@@ -331,6 +349,7 @@ export class EgressRelayService implements OnModuleDestroy {
           'Xiaohongshu returned an unexpected page through the local route.'
         );
       }
+      if (lease) lease.probedAt = new Date();
       return { ok: true, ...this.status(organizationId) };
     } catch (error) {
       this.stopLease(organizationId, 'rednote_probe_failed');
@@ -568,7 +587,7 @@ export class EgressRelayService implements OnModuleDestroy {
         connector.socket.send(JSON.stringify({ type: 'close', streamId }));
       }
       socket.end('HTTP/1.1 504 Gateway Timeout\r\n\r\n');
-    }, 10_000);
+    }, STREAM_OPEN_TIMEOUT_MS);
 
     socket.once('postiz-egress-error', (message: string) => {
       clearTimeout(timeout);
@@ -622,7 +641,7 @@ export class EgressRelayService implements OnModuleDestroy {
         socket.destroy();
         reject(error);
       };
-      socket.setTimeout(15_000, () =>
+      socket.setTimeout(PROBE_SOCKET_TIMEOUT_MS, () =>
         fail(new Error('Egress test timed out.'))
       );
       socket.once('error', fail);

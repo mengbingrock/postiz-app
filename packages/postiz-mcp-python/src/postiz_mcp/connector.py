@@ -199,7 +199,10 @@ class LocalEgressConnector:
     async def _read_local(self, stream_id: int, reader: asyncio.StreamReader) -> None:
         try:
             while True:
-                chunk = await reader.read(64 * 1024)
+                # Small chunks so control frames (stream opened/closed) of
+                # other streams are not stuck behind a large asset on a slow
+                # uplink; the single WebSocket is strictly ordered.
+                chunk = await reader.read(16 * 1024)
                 if not chunk:
                     break
                 socket = self.socket
