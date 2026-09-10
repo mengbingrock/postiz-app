@@ -35,6 +35,8 @@ class ConnectorTest(unittest.IsolatedAsyncioTestCase):
             "sns-img-qc.xhscdn.com",
             "sns-web-i10.rednotecdn.com",
             "creator.rednote.com",
+            "t2.rnote.com",
+            "redtrust.devops.rednote.life",
             "xhslink.com",
         ):
             self.assertTrue(_is_allowed_egress_host(host), host)

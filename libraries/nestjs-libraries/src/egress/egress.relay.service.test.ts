@@ -25,6 +25,8 @@ test('Postiz egress destination allowlist permits only expected hosts', () => {
     'sns-web-i10.rednotecdn.com',
     'fe-platform-s10.rednotecdn.com',
     'creator.rednote.com',
+    't2.rnote.com',
+    'redtrust.devops.rednote.life',
     'xhslink.com',
   ]) {
     assert.equal(allowedHost(host), true, host);

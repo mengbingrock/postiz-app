@@ -25,6 +25,8 @@ REDNOTE_HOST_SUFFIXES = (
     "xhscdn.com",
     "rednotecdn.com",  # static/avatar/image CDN used by the overseas edge
     "rednote.com",
+    "rnote.com",  # INTL API/telemetry hosts (t2., apm-fe.)
+    "rednote.life",  # INTL risk-control (redtrust) endpoints
     "xhslink.com",
     "xhs.cn",
 )
