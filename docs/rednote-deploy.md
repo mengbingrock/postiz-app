@@ -189,6 +189,13 @@ MCP browser ──http://127.0.0.1:<org port>──▶ backend EgressRelayServic
   (that is how `rednotecdn.com` was found).
 - Keep the same route once an account is connected — switching between the
   laptop IP and the cloud IP is exactly what trips risk control.
+- Expect it to be **slow**: measured ~420 KB/s through a home connector vs
+  10 MB/s direct, so the rednote.com creator page takes 15–25 s to render
+  (blank until then). The MCP's blank-page settle window is 30 s and the
+  login/creator checks allow 60 s/45 s for this; `check_login_status` also
+  falls back to the home-page verdict if the creator page never renders.
+  Diagnose with `cmd/creatorcheck` (`XHS_PROXY=http://127.0.0.1:<lease port>
+  CREATORCHECK_TIMELINE_ONLY=1`), which prints a DOM timeline + screenshots.
 
 ## Client: `post-truegrit-mcp` (install on a workstation)
 
