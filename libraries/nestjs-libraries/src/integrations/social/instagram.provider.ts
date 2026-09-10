@@ -35,6 +35,8 @@ const instagramFacebookOAuthCredentialSetup: OAuthCredentialSetup = {
     'Add the Manage messaging & content on Instagram use case to the Meta app.',
     'Open API setup with Facebook login and add the required content, comments, and insights permissions.',
     'Enable Client OAuth Login and Web OAuth Login in Facebook Login for Business settings.',
+    'Connect the Instagram professional account to a Facebook Page managed by the Facebook account that authorizes Postiz.',
+    'While the app is unpublished, add the authorizing Facebook account as an app role. To connect users outside the app roles, complete Meta App Review and publish the app.',
   ],
 };
 
@@ -48,6 +50,7 @@ export class InstagramProvider
   identifier = 'instagram';
   name = 'Instagram\n(Facebook Business)';
   customOAuthCredentials = true;
+  alwaysRequireCustomOAuthCredentials = true;
   oauthCredentialSetup = instagramFacebookOAuthCredentialSetup;
   isBetweenSteps = true;
   toolTip = 'Instagram must be business and connected to a Facebook page';
@@ -63,6 +66,17 @@ export class InstagramProvider
   override maxConcurrentJob = 400;
   editor = 'normal' as const;
   dto = InstagramDto;
+
+  validateCustomOAuthCredentials(clientInformation: ClientInformation) {
+    if (!/^\d{5,32}$/.test(clientInformation.client_id)) {
+      return 'Enter a valid numeric Meta App ID';
+    }
+    if (!/^\S{16,256}$/.test(clientInformation.client_secret)) {
+      return 'Enter a valid Meta App Secret';
+    }
+    return undefined;
+  }
+
   maxLength() {
     return 2200;
   }

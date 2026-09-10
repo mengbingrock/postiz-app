@@ -48,7 +48,7 @@ export interface IAuthenticator {
     integrationId: string,
     accessToken: string,
     postId: string,
-    fromDate: number,
+    fromDate: number
   ): Promise<AnalyticsData[]>;
   changeNickname?(
     id: string,
@@ -71,7 +71,6 @@ export interface AnalyticsData {
   data: Array<{ total: string; date: string }>;
   percentageChange: number;
 }
-
 
 export type GenerateAuthUrlResponse = {
   url: string;
@@ -212,6 +211,12 @@ export interface SocialProvider
    * OAuth flow is pending, and persisted encrypted with the integration.
    */
   customOAuthCredentials?: boolean;
+  /**
+   * Requires every new connection to supply its own OAuth application even
+   * when the server has default credentials. Use this for providers whose
+   * development-mode apps would otherwise restrict all tenants to app roles.
+   */
+  alwaysRequireCustomOAuthCredentials?: boolean;
   /**
    * Describes a provider's OAuth application credentials. The integration
    * list exposes this non-secret metadata so a missing server configuration

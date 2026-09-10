@@ -20,7 +20,10 @@ The setup window is available for Facebook, Instagram (Facebook Login and the
 standalone Instagram API), Threads, YouTube, Google Business Profile, LinkedIn
 and LinkedIn Pages, Reddit, TikTok, TikTok Business, Pinterest, Dribbble,
 Discord, Slack, Kick, Twitch, Mastodon, Tumblr, and any later provider that
-declares `oauthCredentialSetup` metadata.
+declares `oauthCredentialSetup` metadata. Instagram with Facebook Login always
+opens this setup window, even when the server has shared Meta credentials. This
+prevents a Meta app in development mode from silently limiting every Postiz
+customer to the server operator's app-role accounts.
 
 Discord also requires the server operator to set `DISCORD_BOT_TOKEN_ID` because
 Discord does not return an application bot token through the OAuth flow.

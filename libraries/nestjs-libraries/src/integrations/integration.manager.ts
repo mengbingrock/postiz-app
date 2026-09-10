@@ -161,6 +161,8 @@ export class IntegrationManager {
               isWeb3: !!p.isWeb3,
               isChromeExtension: !!p.isChromeExtension,
               customOAuthCredentials: !!p.customOAuthCredentials,
+              alwaysRequireCustomOAuthCredentials:
+                !!p.alwaysRequireCustomOAuthCredentials,
               missingOAuthCredentials,
               ...(oauthCredentialSetup
                 ? {

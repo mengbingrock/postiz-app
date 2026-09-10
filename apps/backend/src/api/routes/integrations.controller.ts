@@ -1179,7 +1179,8 @@ export class IntegrationsController {
       if (
         integrationProvider.oauthCredentialSetup &&
         !clientInformation &&
-        !hasServerOAuthCredentials(integrationProvider.oauthCredentialSetup)
+        (integrationProvider.alwaysRequireCustomOAuthCredentials ||
+          !hasServerOAuthCredentials(integrationProvider.oauthCredentialSetup))
       ) {
         return {
           requiresOAuthCredentials: true,

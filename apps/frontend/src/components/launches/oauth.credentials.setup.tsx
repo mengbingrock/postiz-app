@@ -47,6 +47,7 @@ export const OAuthCredentialsSetup: FC<{
   const callbackUrl = `${origin}${
     setup.callbackPath || `/integrations/social/${identifier}`
   }`;
+  const serverCredentialsMissing = setup.missing.length > 0;
   const scopeText = useMemo(() => setup.scopes.join(', '), [setup.scopes]);
   const methods = useForm({
     mode: 'onChange',
@@ -94,9 +95,19 @@ export const OAuthCredentialsSetup: FC<{
           Set up {providerName}
         </div>
         <p className="text-[13px] leading-[20px] text-textColor/80">
-          This Postiz server does not have {setup.missing.join(' and ')} set.
-          Add credentials from an app you control to continue—no failed OAuth
-          page is opened.
+          {serverCredentialsMissing ? (
+            <>
+              This Postiz server does not have {setup.missing.join(' and ')}{' '}
+              set. Add credentials from an app you control to continue—no failed
+              OAuth page is opened.
+            </>
+          ) : (
+            <>
+              Connect with an OAuth app you control. Its credentials and
+              authorization are isolated to your organization instead of relying
+              on the Postiz server&apos;s shared app.
+            </>
+          )}
         </p>
       </div>
 

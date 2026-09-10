@@ -395,6 +395,7 @@ export const AddProviderComponent: FC<{
     isWeb3: boolean;
     isChromeExtension?: boolean;
     customOAuthCredentials?: boolean;
+    alwaysRequireCustomOAuthCredentials?: boolean;
     missingOAuthCredentials?: boolean;
     oauthCredentialSetup?: OAuthCredentialSetupView;
     extensionCookies?: Array<{
@@ -442,7 +443,8 @@ export const AddProviderComponent: FC<{
         }>,
         providerName?: string,
         missingOAuthCredentials?: boolean,
-        oauthCredentialSetup?: OAuthCredentialSetupView
+        oauthCredentialSetup?: OAuthCredentialSetupView,
+        alwaysRequireCustomOAuthCredentials?: boolean
       ) =>
       async () => {
         const onboardingParam = onboarding ? 'onboarding=true' : '';
@@ -705,6 +707,10 @@ export const AddProviderComponent: FC<{
           });
           return;
         }
+        if (alwaysRequireCustomOAuthCredentials && oauthCredentialSetup) {
+          openOAuthCredentialSetup();
+          return;
+        }
         if (missingOAuthCredentials && oauthCredentialSetup) {
           openOAuthCredentialSetup();
           return;
@@ -833,7 +839,8 @@ export const AddProviderComponent: FC<{
                   item.customFields,
                   item.name,
                   item.missingOAuthCredentials,
-                  item.oauthCredentialSetup
+                  item.oauthCredentialSetup,
+                  item.alwaysRequireCustomOAuthCredentials
                 )}
                 {...(!!item.toolTip
                   ? {
