@@ -23,6 +23,7 @@ CONNECTOR_LOCK_RETRY_SECONDS = 2
 REDNOTE_HOST_SUFFIXES = (
     "xiaohongshu.com",
     "xhscdn.com",
+    "rednotecdn.com",  # static/avatar/image CDN used by the overseas edge
     "rednote.com",
     "xhslink.com",
     "xhs.cn",

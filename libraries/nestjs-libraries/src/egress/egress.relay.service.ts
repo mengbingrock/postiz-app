@@ -37,6 +37,7 @@ const DEFAULT_PROXY_PORT = 18443;
 const REDNOTE_HOST_SUFFIXES = [
   'xiaohongshu.com',
   'xhscdn.com',
+  'rednotecdn.com', // static/avatar/image CDN used by the overseas edge
   'rednote.com',
   'xhslink.com',
   'xhs.cn',

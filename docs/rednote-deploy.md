@@ -183,8 +183,10 @@ MCP browser ──http://127.0.0.1:<org port>──▶ backend EgressRelayServic
   lease expired and will fail through the proxy — same limitation as
   ChineseInLA; publish "now" or renew the lease (`postiz-mcp proxy start`).
 - Relay allowlist (server *and* client): `*.xiaohongshu.com`, `*.xhscdn.com`,
-  `*.rednote.com`, `*.xhslink.com`, `*.xhs.cn`, port 443 only. A refused host
-  is logged as `Egress proxy refused <host>:<port>` in the backend log.
+  `*.rednotecdn.com`, `*.rednote.com`, `*.xhslink.com`, `*.xhs.cn`, port 443
+  only. A refused host is logged as `Egress proxy refused <host>:<port>` in
+  the backend log — check it whenever a proxied page renders without assets
+  (that is how `rednotecdn.com` was found).
 - Keep the same route once an account is connected — switching between the
   laptop IP and the cloud IP is exactly what trips risk control.
 

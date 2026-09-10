@@ -22,6 +22,8 @@ test('Postiz egress destination allowlist permits only expected hosts', () => {
     'creator.xiaohongshu.com',
     'edith.xiaohongshu.com',
     'sns-img-qc.xhscdn.com',
+    'sns-web-i10.rednotecdn.com',
+    'fe-platform-s10.rednotecdn.com',
     'creator.rednote.com',
     'xhslink.com',
   ]) {

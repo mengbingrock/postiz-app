@@ -91,7 +91,7 @@ egress lease. If the owner exits, a waiting process automatically takes over.
 
 The connector only relays TLS connections (port 443) to an allowlist of
 first-party hosts: ChineseInLA, and — since 0.1.5 — Xiaohongshu/RedNote
-(`*.xiaohongshu.com`, `*.xhscdn.com`, `*.rednote.com`, `*.xhslink.com`,
+(`*.xiaohongshu.com`, `*.xhscdn.com`, `*.rednotecdn.com`, `*.rednote.com`, `*.xhslink.com`,
 `*.xhs.cn`). A server with `REDNOTE_PROXY` enabled routes RedNote login and
 publishing through your machine so Xiaohongshu sees your residential IP; the
 server starts and stops the lease automatically around each operation.

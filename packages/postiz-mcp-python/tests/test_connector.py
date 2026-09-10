@@ -33,6 +33,7 @@ class ConnectorTest(unittest.IsolatedAsyncioTestCase):
             "creator.xiaohongshu.com",
             "EDITH.XIAOHONGSHU.COM.",
             "sns-img-qc.xhscdn.com",
+            "sns-web-i10.rednotecdn.com",
             "creator.rednote.com",
             "xhslink.com",
         ):
