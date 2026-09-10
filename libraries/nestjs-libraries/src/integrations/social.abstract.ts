@@ -91,6 +91,17 @@ export class BadBody extends ApplicationFailure {
   }
 }
 
+// A user-facing reason why a setup step (e.g. listing a provider's pages)
+// cannot proceed. The function route returns it as a 400 so the connect
+// dialog can show the platform's actual answer instead of a generic empty
+// state.
+export class ChannelSetupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChannelSetupError';
+  }
+}
+
 export class NotEnoughScopes {
   constructor(
     public message = 'Not enough scopes, when choosing a provider, please add all the scopes'

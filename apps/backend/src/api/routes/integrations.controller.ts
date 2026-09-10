@@ -24,6 +24,7 @@ import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/po
 import { IntegrationTimeDto } from '@gitroom/nestjs-libraries/dtos/integrations/integration.time.dto';
 import { PlugDto } from '@gitroom/nestjs-libraries/dtos/plugs/plug.dto';
 import {
+  ChannelSetupError,
   Disconnect,
   RefreshToken,
 } from '@gitroom/nestjs-libraries/integrations/social.abstract';
@@ -1409,6 +1410,12 @@ export class IntegrationsController {
 
         return load;
       } catch (err) {
+        // A setup step explained why it cannot proceed; hand the reason to
+        // the dialog instead of collapsing it into a generic empty state.
+        if (err instanceof ChannelSetupError) {
+          throw new BadRequestException(err.message);
+        }
+
         // The platform will keep rejecting this channel until the user
         // re-connects it: mark it as needing a refresh instead of retrying.
         if (err instanceof Disconnect) {

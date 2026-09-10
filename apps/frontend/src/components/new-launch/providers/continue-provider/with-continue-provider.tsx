@@ -63,6 +63,7 @@ export function withContinueProvider<TItem, TSelection>(
     const call = useCustomProviderFunction();
     const t = useT();
     const [selection, setSelection] = useState<TSelection | null>(null);
+    const [setupError, setSetupError] = useState<string | null>(null);
 
     const loadData = useCallback(async () => {
       // Skip fetch if initial data was provided
@@ -70,7 +71,20 @@ export function withContinueProvider<TItem, TSelection>(
         return initialData;
       }
       try {
-        return await call.get(endpoint);
+        const result = await call.get(endpoint);
+        // A 400 from the function route carries the provider's own reason
+        // (e.g. which Google accounts were found and why they had no
+        // locations); keep it for the empty state.
+        if (result && !Array.isArray(result) && result.message) {
+          setSetupError(
+            Array.isArray(result.message)
+              ? result.message.join(', ')
+              : String(result.message)
+          );
+          return [];
+        }
+        setSetupError(null);
+        return result;
       } catch (e) {
         // Handle error silently
       }
@@ -108,6 +122,11 @@ export function withContinueProvider<TItem, TSelection>(
     if (!isLoading && !resolvedData?.length) {
       return (
         <div className="text-center flex flex-col justify-center items-center text-[18px] leading-[26px] h-[300px]">
+          {setupError ? (
+            <span className="mb-[16px] text-[14px] leading-[20px] text-red-500 break-words">
+              {setupError}
+            </span>
+          ) : null}
           {emptyStateMessages.map((msg, index) => (
             <span key={msg.key}>
               {t(msg.key, msg.text)}
