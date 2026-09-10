@@ -75,7 +75,11 @@ export type McpToolResult = {
 };
 
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
-const SESSION_PREFLIGHT_TIMEOUT_MS = 45_000;
+// INTL creator pages routed through a customer egress connector regularly need
+// 40–55 seconds to finish their session check. Keep this below the normal MCP
+// tool timeout, but above that observed proxy path so a healthy login is not
+// abandoned immediately before publication.
+const SESSION_PREFLIGHT_TIMEOUT_MS = 90_000;
 const SESSION_EXPIRED_MESSAGE =
   'The RedNote session has expired. Reconnect the RedNote channel before publishing.';
 const startingServers = new Map<string, Promise<void>>();

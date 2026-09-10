@@ -70,7 +70,7 @@ test('RedNote publish checks the session before invoking the publish tool', asyn
   await provider.post('integration-1', credentials, postDetails, {} as any);
 
   assert.equal(calls[0]?.name, 'check_login_status');
-  assert.equal(calls[0]?.timeout, 45_000);
+  assert.equal(calls[0]?.timeout, 90_000);
   assert.equal(calls[1]?.name, 'publish_content');
   assert.deepEqual(calls[1]?.args.images, ['https://example.com/image.jpg']);
   assert.equal(calls[1]?.args.is_original, true);
