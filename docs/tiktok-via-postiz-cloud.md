@@ -54,9 +54,13 @@ No `pca_`/`pcs_` app is needed in this mode. Channels store a sentinel instead
 of the token, so rotating `POSTIZ_CLOUD_TOKEN` in `.env` (+ backend and
 orchestrator restart) takes effect without reconnecting anything.
 
-To let a TikTok owner add their account to the cloud org without a Postiz
-Cloud login, use the cloud's share-link button (🔗 next to *Add Channel* on
-platform.postiz.com) — they only approve TikTok's consent screen.
+To add another TikTok account to the cloud org, use **Get invite link** in
+the channel picker (provider function `inviteLink` → cloud
+`GET /public/v1/social/tiktok-business`): it returns the cloud's own one-hour
+TikTok authorize URL bound to the cloud org. Send it to the TikTok owner —
+they approve TikTok's consent screen, no Postiz account needed — then
+**Refresh list** and pick the new channel. (The same link is what the 🔗
+button next to *Add Channel* on platform.postiz.com produces.)
 
 ## Connecting the channel
 

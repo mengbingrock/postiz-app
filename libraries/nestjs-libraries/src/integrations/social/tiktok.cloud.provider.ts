@@ -265,6 +265,25 @@ export class TiktokCloudProvider extends SocialAbstract implements SocialProvide
     }));
   }
 
+  // The cloud's own "invite link": a TikTok authorize URL bound to the cloud
+  // organization (valid one hour). Whoever opens it connects their TikTok
+  // into the cloud org without a Postiz Cloud account; the channel then
+  // appears in pages().
+  async inviteLink(accessToken: string) {
+    const response = await this.fetch(
+      `${cloudBackendUrl()}/public/v1/social/tiktok-business`,
+      { headers: this.cloudHeaders(accessToken) },
+      this.identifier
+    );
+    const { url } = await response.json();
+    if (!url) {
+      throw new ChannelSetupError(
+        'Postiz Cloud did not return a TikTok invite link.'
+      );
+    }
+    return { url, expiresInMinutes: 60 };
+  }
+
   async fetchPageInformation(accessToken: string, data: { id: string }) {
     const page = (await this.pages(accessToken)).find((p) => p.id === data.id);
     if (!page) {

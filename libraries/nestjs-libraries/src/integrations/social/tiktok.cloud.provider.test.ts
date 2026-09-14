@@ -108,6 +108,22 @@ test('TikTok via Postiz Cloud lists only enabled TikTok channels of the cloud ac
   );
 });
 
+test('TikTok via Postiz Cloud fetches the cloud org invite link for TikTok', async () => {
+  await withFetch(
+    ({ url, init }) => {
+      assert.equal(url, 'https://api.postiz.com/public/v1/social/tiktok-business');
+      assert.equal((init?.headers as any).Authorization, 'pos_token');
+      return { body: { url: 'https://www.tiktok.com/v2/auth/authorize/?state=abc' } };
+    },
+    async () => {
+      assert.deepEqual(await new TiktokCloudProvider().inviteLink('pos_token'), {
+        url: 'https://www.tiktok.com/v2/auth/authorize/?state=abc',
+        expiresInMinutes: 60,
+      });
+    }
+  );
+});
+
 test('TikTok via Postiz Cloud explains when the cloud account has no TikTok channel', async () => {
   await withFetch(
     () => ({ body: [{ id: 'x', name: 'x', identifier: 'linkedin' }] }),

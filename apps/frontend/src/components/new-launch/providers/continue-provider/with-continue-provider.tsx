@@ -40,6 +40,12 @@ export interface ContinueProviderConfig<TItem, TSelection> {
   renderItem: (item: TItem, isSelected: boolean) => ReactNode;
   isSelected: (item: TItem, selection: TSelection | null) => boolean;
   getItemId: (item: TItem) => string;
+  // Optional block shown under the list and in the empty state, e.g. a
+  // provider-specific action that adds more items (an invite link).
+  renderExtra?: (helpers: {
+    call: (name: string, data?: any) => Promise<any>;
+    reload: () => void;
+  }) => ReactNode;
 }
 
 export function withContinueProvider<TItem, TSelection>(
@@ -56,6 +62,7 @@ export function withContinueProvider<TItem, TSelection>(
     renderItem,
     isSelected,
     getItemId,
+    renderExtra,
   } = config;
 
   return function ContinueProviderComponent(props: ContinueProviderProps) {
@@ -90,13 +97,22 @@ export function withContinueProvider<TItem, TSelection>(
       }
     }, [initialData]);
 
-    const { data, isLoading } = useSWR(
+    const { data, isLoading, mutate } = useSWR(
       initialData ? null : swrKey,
       loadData,
       SWR_OPTIONS
     );
 
     const resolvedData = initialData || data;
+    const extra = renderExtra
+      ? renderExtra({
+          call: (name: string, customData?: any) => call.get(name, customData),
+          reload: () => {
+            setSetupError(null);
+            void mutate();
+          },
+        })
+      : null;
 
     const handleSelect = useCallback(
       (item: TItem) => () => {
@@ -121,7 +137,7 @@ export function withContinueProvider<TItem, TSelection>(
 
     if (!isLoading && !resolvedData?.length) {
       return (
-        <div className="text-center flex flex-col justify-center items-center text-[18px] leading-[26px] h-[300px]">
+        <div className="text-center flex flex-col justify-center items-center text-[18px] leading-[26px] min-h-[300px] gap-[16px]">
           {setupError ? (
             <span className="mb-[16px] text-[14px] leading-[20px] text-red-500 break-words">
               {setupError}
@@ -138,6 +154,7 @@ export function withContinueProvider<TItem, TSelection>(
               )}
             </span>
           ))}
+          {extra}
         </div>
       );
     }
@@ -164,6 +181,7 @@ export function withContinueProvider<TItem, TSelection>(
             {t('save', 'Save')}
           </Button>
         </div>
+        {extra}
       </div>
     );
   };
