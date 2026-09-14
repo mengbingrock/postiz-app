@@ -172,6 +172,53 @@ test('TikTok via Postiz Cloud imports media, creates the cloud post and reports 
   );
 });
 
+test('TikTok via Postiz Cloud skips consent and credentials with a server-wide token', async () => {
+  const previousToken = process.env.POSTIZ_CLOUD_TOKEN;
+  const previousFrontend = process.env.FRONTEND_URL;
+  process.env.POSTIZ_CLOUD_TOKEN = 'server-cloud-key';
+  process.env.FRONTEND_URL = 'https://post.example.test';
+  try {
+    const provider = new TiktokCloudProvider();
+    assert.equal(provider.customOAuthCredentials, false);
+    assert.equal(provider.oauthCredentialSetup, undefined);
+
+    const { url, state } = await provider.generateAuthUrl();
+    const callback = new URL(url);
+    assert.equal(callback.origin, 'https://post.example.test');
+    assert.equal(callback.pathname, '/integrations/social/tiktok-cloud');
+    assert.equal(callback.searchParams.get('code'), 'postiz-cloud-server-token');
+    assert.equal(callback.searchParams.get('state'), state);
+
+    const auth = await provider.authenticate({ code: 'postiz-cloud-server-token', codeVerifier: state });
+    assert.notEqual(typeof auth, 'string');
+    if (typeof auth === 'string') return;
+    assert.equal(auth.accessToken, 'postiz-cloud:server-token');
+
+    await withFetch(
+      ({ init }) => {
+        assert.equal((init?.headers as any).Authorization, 'server-cloud-key');
+        return { body: cloudIntegrations };
+      },
+      async () => {
+        const information = await provider.fetchPageInformation(auth.accessToken, { id: 'cloud-tt-1' });
+        assert.equal(information.access_token, 'postiz-cloud:server-token');
+      }
+    );
+
+    delete process.env.POSTIZ_CLOUD_TOKEN;
+    await assert.rejects(
+      provider.pages('postiz-cloud:server-token'),
+      (error: unknown) =>
+        error instanceof ChannelSetupError && /POSTIZ_CLOUD_TOKEN is no longer set/.test(error.message)
+    );
+  } finally {
+    if (previousToken === undefined) delete process.env.POSTIZ_CLOUD_TOKEN;
+    else process.env.POSTIZ_CLOUD_TOKEN = previousToken;
+    if (previousFrontend === undefined) delete process.env.FRONTEND_URL;
+    else process.env.FRONTEND_URL = previousFrontend;
+  }
+});
+
 test('TikTok via Postiz Cloud maps the cloud post state to the workflow status', async () => {
   const pendingData = { cloudPostId: 'cloud-post-9', createdAt: '2026-09-14T06:00:00.000Z' };
   const provider = new TiktokCloudProvider();

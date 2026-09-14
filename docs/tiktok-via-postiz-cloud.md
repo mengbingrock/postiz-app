@@ -37,6 +37,27 @@ stitch / comment, `autoAddMusic`, brand toggles, `video_made_with_ai`).
    POSTIZ_CLOUD_BACKEND_URL=https://api.postiz.com
    ```
 
+## Self-serve mode: `POSTIZ_CLOUD_TOKEN` (recommended for a team)
+
+If the instance owns the cloud account, set the cloud account's API key
+(Postiz Cloud → Settings → Developers → Access → API Key, or a `pos_` grant)
+server-wide:
+
+```
+POSTIZ_CLOUD_TOKEN=...
+```
+
+Then users on this instance never see Postiz Cloud: the tile skips the
+credential window and the consent page and goes straight to the list of
+TikTok channels connected in that cloud account; they pick one and are done.
+No `pca_`/`pcs_` app is needed in this mode. Channels store a sentinel instead
+of the token, so rotating `POSTIZ_CLOUD_TOKEN` in `.env` (+ backend and
+orchestrator restart) takes effect without reconnecting anything.
+
+To let a TikTok owner add their account to the cloud org without a Postiz
+Cloud login, use the cloud's share-link button (🔗 next to *Add Channel* on
+platform.postiz.com) — they only approve TikTok's consent screen.
+
 ## Connecting the channel
 
 Add channel → **TikTok (via Postiz Cloud)** → consent screen on

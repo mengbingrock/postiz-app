@@ -36,6 +36,15 @@ const cloudBackendUrl = () =>
     ''
   );
 
+// Server-wide mode: when the instance owns a Postiz Cloud token (the cloud
+// account's API key or a pos_ grant), users never see the cloud — the tile
+// skips the credential window and the consent page and goes straight to the
+// channel picker. The channel stores a sentinel so a rotated token in .env is
+// picked up without reconnecting.
+const serverToken = () => process.env.POSTIZ_CLOUD_TOKEN?.trim() || '';
+const SERVER_TOKEN_CODE = 'postiz-cloud-server-token';
+const SERVER_TOKEN_SENTINEL = 'postiz-cloud:server-token';
+
 // pos_ tokens do not expire; they are revoked by the user in Postiz Cloud.
 const TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 365 * 100;
 const TIKTOK_IDENTIFIERS = new Set(['tiktok', 'tiktok-business']);
@@ -85,8 +94,11 @@ const formatQueryDate = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, 
 export class TiktokCloudProvider extends SocialAbstract implements SocialProvider {
   identifier = 'tiktok-cloud';
   name = 'TikTok\n(via Postiz Cloud)';
-  customOAuthCredentials = true;
-  oauthCredentialSetup = tiktokCloudOAuthCredentialSetup;
+  // With POSTIZ_CLOUD_TOKEN there is nothing for the user to configure.
+  customOAuthCredentials = !serverToken();
+  oauthCredentialSetup = serverToken()
+    ? undefined
+    : tiktokCloudOAuthCredentialSetup;
   isBetweenSteps = true;
   scopes: string[] = [];
   toolTip =
@@ -121,8 +133,31 @@ export class TiktokCloudProvider extends SocialAbstract implements SocialProvide
     };
   }
 
+  private resolveToken(accessToken: string) {
+    if (accessToken !== SERVER_TOKEN_SENTINEL) {
+      return accessToken;
+    }
+    const token = serverToken();
+    if (!token) {
+      throw new ChannelSetupError(
+        'This channel uses the server-wide Postiz Cloud token, but POSTIZ_CLOUD_TOKEN is no longer set on the server.'
+      );
+    }
+    return token;
+  }
+
   async generateAuthUrl(clientInformation?: ClientInformation) {
     const state = makeId(16);
+    if (serverToken()) {
+      // No consent needed: land on our own callback, which calls authenticate.
+      return {
+        url:
+          `${process.env.FRONTEND_URL}/integrations/social/${this.identifier}` +
+          `?code=${SERVER_TOKEN_CODE}&state=${state}`,
+        codeVerifier: state,
+        state,
+      };
+    }
     const credentials = resolveOAuthCredentials(
       tiktokCloudOAuthCredentialSetup,
       clientInformation
@@ -143,6 +178,20 @@ export class TiktokCloudProvider extends SocialAbstract implements SocialProvide
     params: { code: string; codeVerifier: string; refresh?: string },
     clientInformation?: ClientInformation
   ) {
+    if (params.code === SERVER_TOKEN_CODE) {
+      if (!serverToken()) {
+        return 'POSTIZ_CLOUD_TOKEN is not set on this server.';
+      }
+      return {
+        id: 'postiz-cloud-server',
+        name: 'Postiz Cloud',
+        accessToken: SERVER_TOKEN_SENTINEL,
+        refreshToken: SERVER_TOKEN_SENTINEL,
+        expiresIn: TOKEN_LIFETIME_SECONDS,
+        picture: '',
+        username: '',
+      };
+    }
     const credentials = resolveOAuthCredentials(
       tiktokCloudOAuthCredentialSetup,
       clientInformation
@@ -182,7 +231,7 @@ export class TiktokCloudProvider extends SocialAbstract implements SocialProvide
   private cloudHeaders(accessToken: string) {
     return {
       'Content-Type': 'application/json',
-      Authorization: accessToken,
+      Authorization: this.resolveToken(accessToken),
     };
   }
 
