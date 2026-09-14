@@ -87,6 +87,7 @@ const channelPlatformLabels: Record<string, string> = {
   rednote: 'RedNote',
   'reddit-agent': 'Reddit',
   'tajima-website': 'Website',
+  'tiktok-cloud': 'TikTok (via Postiz Cloud)',
   youtube: 'YouTube',
 };
 

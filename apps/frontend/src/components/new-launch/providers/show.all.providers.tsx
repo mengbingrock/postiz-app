@@ -110,6 +110,10 @@ export const Providers = [
     component: TiktokProvider,
   },
   {
+    identifier: 'tiktok-cloud',
+    component: TiktokProvider,
+  },
+  {
     identifier: 'pinterest',
     component: PinterestProvider,
   },
