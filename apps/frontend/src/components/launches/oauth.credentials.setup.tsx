@@ -120,7 +120,7 @@ export const OAuthCredentialsSetup: FC<{
               href={setup.developerPortalUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-primary underline"
+              className="text-linkColor underline underline-offset-2"
             >
               {providerName} developer portal
             </a>{' '}
@@ -137,7 +137,7 @@ export const OAuthCredentialsSetup: FC<{
               </code>
               <button
                 type="button"
-                className="shrink-0 text-[12px] text-primary underline"
+                className="shrink-0 text-[12px] text-linkColor underline underline-offset-2"
                 onClick={() => copy(callbackUrl)}
               >
                 Copy
@@ -153,7 +153,7 @@ export const OAuthCredentialsSetup: FC<{
                 </code>
                 <button
                   type="button"
-                  className="shrink-0 text-[12px] text-primary underline"
+                  className="shrink-0 text-[12px] text-linkColor underline underline-offset-2"
                   onClick={() => copy(scopeText)}
                 >
                   Copy
@@ -166,7 +166,7 @@ export const OAuthCredentialsSetup: FC<{
           href={setup.documentationUrl}
           target="_blank"
           rel="noreferrer"
-          className="mt-[12px] inline-block text-[13px] text-primary underline"
+          className="mt-[12px] inline-block text-[13px] text-linkColor underline underline-offset-2"
         >
           Open {providerName} OAuth documentation
         </a>

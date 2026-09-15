@@ -516,7 +516,7 @@ export const RedditAgentConnectionSetup: FC<{
               </div>
               <button
                 type="button"
-                className="text-[11px] text-primary hover:underline"
+                className="text-[11px] text-linkColor hover:underline"
                 onClick={openLoginBrowser}
               >
                 Open separately

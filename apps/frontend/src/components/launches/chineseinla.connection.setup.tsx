@@ -242,7 +242,7 @@ export const ChineseInLAConnectionSetup: FC<{
             type="button"
             disabled={loading || egressState === 'checking'}
             onClick={() => void readEgressStatus()}
-            className="text-[12px] text-primary disabled:opacity-50"
+            className="text-[12px] text-linkColor disabled:opacity-50"
           >
             {egressState === 'checking' ? 'Checking…' : 'Check again'}
           </button>

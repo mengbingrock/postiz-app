@@ -88,6 +88,7 @@ module.exports = {
         btnSimple: 'var(--new-btn-simple)',
         btnText: 'var(--new-btn-text)',
         btnPrimary: 'var(--new-btn-primary)',
+        linkColor: 'var(--new-link-color)',
         ai: 'var(--new-ai-btn)',
         boxHover: 'var(--new-box-hover)',
         newTableBorder: 'var(--new-table-border)',

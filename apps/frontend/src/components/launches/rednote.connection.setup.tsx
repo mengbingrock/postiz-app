@@ -448,7 +448,7 @@ export const RedNoteConnectionSetup: FC<{
                   egressState === 'checking' || starting || startingVisible
                 }
                 onClick={() => void readEgressStatus()}
-                className="text-[12px] text-primary disabled:opacity-50"
+                className="text-[12px] text-linkColor disabled:opacity-50"
               >
                 {egressState === 'checking' ? 'Checking…' : 'Check again'}
               </button>

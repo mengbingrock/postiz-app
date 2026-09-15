@@ -98,7 +98,7 @@ export const LinkedinPageByoConnectionSetup: FC<{
             href="https://www.linkedin.com/developers/apps"
             target="_blank"
             rel="noreferrer"
-            className="text-primary underline"
+            className="text-linkColor underline underline-offset-2"
           >
             LinkedIn Developers
           </a>
@@ -120,7 +120,7 @@ export const LinkedinPageByoConnectionSetup: FC<{
             </code>
             <button
               type="button"
-              className="shrink-0 text-[12px] text-primary underline"
+              className="shrink-0 text-[12px] text-linkColor underline underline-offset-2"
               onClick={() => copy(callbackUrl)}
             >
               Copy
@@ -135,7 +135,7 @@ export const LinkedinPageByoConnectionSetup: FC<{
             </code>
             <button
               type="button"
-              className="shrink-0 text-[12px] text-primary underline"
+              className="shrink-0 text-[12px] text-linkColor underline underline-offset-2"
               onClick={() => copy(permissionText)}
             >
               Copy

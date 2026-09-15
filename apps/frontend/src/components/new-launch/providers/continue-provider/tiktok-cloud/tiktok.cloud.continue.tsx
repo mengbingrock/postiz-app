@@ -93,7 +93,7 @@ const InviteLink: FC<{
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="text-primary underline self-center"
+              className="self-center text-linkColor underline underline-offset-2"
             >
               Open it myself
             </a>
