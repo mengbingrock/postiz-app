@@ -8,6 +8,7 @@ import {
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { LinkedinProvider } from '@gitroom/nestjs-libraries/integrations/social/linkedin.provider';
+import { ChannelSetupError } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import dayjs from 'dayjs';
 import { Integration } from '@prisma/client';
 import { Plug } from '@gitroom/helpers/decorators/plug.decorator';
@@ -15,6 +16,20 @@ import { timer } from '@gitroom/helpers/utils/timer';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
 import { linkedinOAuthCredentialSetup } from '@gitroom/nestjs-libraries/integrations/social/linkedin.provider';
+
+export const linkedinPageOAuthCredentialSetup = {
+  ...linkedinOAuthCredentialSetup,
+  // A Community Management app cannot safely fall back to the personal
+  // LinkedIn app: the products, scopes, and registered callback differ.
+  clientIdEnv: ['LINKEDIN_PAGE_CLIENT_ID'],
+  clientSecretEnv: ['LINKEDIN_PAGE_CLIENT_SECRET'],
+  clientIdLabel: 'LinkedIn Page Client ID',
+  clientSecretLabel: 'LinkedIn Page Client Secret',
+  help: [
+    'Associate the app with a LinkedIn Page that you administer.',
+    'Obtain Community Management API access and add this Postiz callback under Auth. OpenID Connect is not required for Page publishing.',
+  ],
+};
 
 @Rules(
   'LinkedIn can have maximum one attachment when selecting video, when choosing a carousel on LinkedIn minimum amount of attachment must be two, and only pictures, if uploading a video, LinkedIn can have only one attachment'
@@ -28,10 +43,8 @@ export class LinkedinPageProvider
   override isBetweenSteps = true;
   override refreshWait = true;
   override maxConcurrentJob = 2; // LinkedIn Page has professional posting limits
+  override oauthCredentialSetup = linkedinPageOAuthCredentialSetup;
   override scopes = [
-    'openid',
-    'profile',
-    'w_member_social',
     'r_basicprofile',
     'rw_organization_admin',
     'w_organization_social',
@@ -42,7 +55,7 @@ export class LinkedinPageProvider
 
   protected oauthCredentials(clientInformation?: ClientInformation) {
     const credentials = resolveOAuthCredentials(
-      linkedinOAuthCredentialSetup,
+      linkedinPageOAuthCredentialSetup,
       clientInformation
     );
     return {
@@ -190,7 +203,7 @@ export class LinkedinPageProvider
     if (!clientId) {
       throw new Error('LinkedIn Client ID is required');
     }
-    const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&prompt=none&client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(
       this.redirectUri()
     )}&state=${state}&scope=${encodeURIComponent(this.scopes.join(' '))}`;
     return {
@@ -201,34 +214,94 @@ export class LinkedinPageProvider
   }
 
   async companies(accessToken: string) {
-    const { elements, ...all } = await (
-      await fetch(
-        'https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&state=APPROVED&projection=(elements*(role,organizationalTarget~(localizedName,vanityName,logoV2(original~:playableStreams))))',
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'X-Restli-Protocol-Version': '2.0.0',
-            'LinkedIn-Version': '202601',
-          },
-        }
-      )
-    ).json();
+    // LinkedIn no longer reliably expands `organizationalTarget~` in the ACL
+    // response. Read the role URNs first, then load each Page independently so
+    // a valid administrator is not presented with an empty Page picker.
+    const response = await fetch(
+      'https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&state=APPROVED',
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Restli-Protocol-Version': '2.0.0',
+          'LinkedIn-Version': '202601',
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      throw new ChannelSetupError(
+        `LinkedIn could not list the Pages you administer: ${
+          body.message || body.error_description || `HTTP ${response.status}`
+        }`
+      );
+    }
 
-    return (elements || [])
+    const allowedRoles = new Set([
+      'ADMINISTRATOR',
+      'CONTENT_ADMINISTRATOR',
+      'DIRECT_SPONSORED_CONTENT_POSTER',
+    ]);
+    const pageIds = [
+      ...new Set(
+        (body.elements || [])
+          .filter(
+            (entry: any) =>
+              (!entry.state || entry.state === 'APPROVED') &&
+              allowedRoles.has(entry.role)
+          )
+          .map((entry: any) =>
+            (
+              entry.organization ||
+              entry.organizationTarget ||
+              entry.organizationalTarget ||
+              ''
+            )
+              .split(':')
+              .pop()
+          )
+          .filter(Boolean)
+      ),
+    ] as string[];
+
+    if (!pageIds.length) {
+      return [];
+    }
+
+    const pages = await Promise.allSettled(
+      pageIds.map((page) => this.fetchPageInformation(accessToken, { page }))
+    );
+    const loaded = pages
       .filter(
-        (e: any) =>
-          e['organizationalTarget~'] &&
-          ['ADMINISTRATOR', 'CONTENT_ADMINISTRATOR'].includes(e.role)
+        (
+          result
+        ): result is PromiseFulfilledResult<
+          Awaited<ReturnType<LinkedinPageProvider['fetchPageInformation']>>
+        > => result.status === 'fulfilled'
       )
-      .map((e: any) => ({
-        id: e.organizationalTarget.split(':').pop(),
-        page: e.organizationalTarget.split(':').pop(),
-        username: e['organizationalTarget~'].vanityName,
-        name: e['organizationalTarget~'].localizedName,
-        picture:
-          e['organizationalTarget~'].logoV2?.['original~']?.elements?.[0]
-            ?.identifiers?.[0]?.identifier,
+      .map(({ value }) => ({
+        id: String(value.id),
+        page: String(value.id),
+        username: value.username,
+        name: value.name,
+        picture: value.picture,
       }));
+
+    if (!loaded.length) {
+      const reason = pages.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === 'rejected'
+      )?.reason;
+      throw new ChannelSetupError(
+        `LinkedIn found ${pageIds.length} Page administrator role${
+          pageIds.length === 1 ? '' : 's'
+        }, but could not load the Page details${
+          reason instanceof Error ? `: ${reason.message}` : '.'
+        }`
+      );
+    }
+
+    return loaded;
   }
 
   async reConnect(
@@ -251,16 +324,24 @@ export class LinkedinPageProvider
 
   async fetchPageInformation(accessToken: string, params: { page: string }) {
     const pageId = params.page;
-    const data = await (
-      await fetch(
-        `https://api.linkedin.com/v2/organizations/${pageId}?projection=(id,localizedName,vanityName,logoV2(original~:playableStreams))`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      )
-    ).json();
+    const response = await fetch(
+      `https://api.linkedin.com/v2/organizations/${pageId}?projection=(id,localizedName,vanityName,logoV2(original~:playableStreams))`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Restli-Protocol-Version': '2.0.0',
+          'LinkedIn-Version': '202601',
+        },
+      }
+    );
+    const data = await response.json();
+    if (!response.ok || !data.id) {
+      throw new Error(
+        data.message ||
+          data.error_description ||
+          `LinkedIn Page ${pageId} returned HTTP ${response.status}`
+      );
+    }
 
     return {
       id: data.id,

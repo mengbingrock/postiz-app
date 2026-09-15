@@ -32,6 +32,11 @@ import dayjs from 'dayjs';
 import { ModalWrapperComponent } from '@gitroom/frontend/components/new-launch/modal.wrapper.component';
 import copy from 'copy-to-clipboard';
 
+const LINKEDIN_PERMITTED_SERVICES_URL =
+  'https://www.linkedin.com/mypreferences/d/data-sharing-for-permitted-services';
+
+const linkedinPageIdentifiers = new Set(['linkedin-page', 'linkedin-page-byo']);
+
 export const Menu: FC<{
   canEnable: boolean;
   canDisable: boolean;
@@ -127,9 +132,20 @@ export const Menu: FC<{
     onChange(false);
   }, [t]);
   const deleteChannel = useCallback(async () => {
+    const isLinkedinPage = linkedinPageIdentifiers.has(
+      findIntegration?.identifier
+    );
     if (
       !(await deleteDialog(
-        t('are_you_sure_delete_channel', 'Are you sure you want to delete this channel?'),
+        isLinkedinPage
+          ? t(
+              'delete_linkedin_channel_and_permission',
+              'Delete this channel, then remove its connected app from LinkedIn Permitted services. LinkedIn will open that page after deletion so a new connection must show the consent screen.'
+            )
+          : t(
+              'are_you_sure_delete_channel',
+              'Are you sure you want to delete this channel?'
+            ),
         t('delete_channel_title', 'Delete Channel')
       ))
     ) {
@@ -144,6 +160,13 @@ export const Menu: FC<{
     if (deleteIntegration.status === 406) {
       toast.show(
         t('delete_posts_before_channel', 'You have to delete all the posts associated with this channel before deleting it'),
+        'warning'
+      );
+      return;
+    }
+    if (!deleteIntegration.ok) {
+      toast.show(
+        t('channel_delete_failed', 'Could not delete this channel'),
         'warning'
       );
       return;
@@ -164,10 +187,21 @@ export const Menu: FC<{
         // Silently ignore
       }
     }
-    toast.show(t('channel_deleted', 'Channel Deleted'), 'success');
+    if (isLinkedinPage) {
+      toast.show(
+        t(
+          'linkedin_channel_deleted_remove_permission',
+          'Channel deleted. Remove its connected app on LinkedIn before reconnecting.'
+        ),
+        'success'
+      );
+      window.location.assign(LINKEDIN_PERMITTED_SERVICES_URL);
+    } else {
+      toast.show(t('channel_deleted', 'Channel Deleted'), 'success');
+    }
     setShow(false);
     onChange(true);
-  }, [t, extensionId, id]);
+  }, [t, extensionId, id, findIntegration?.identifier, onChange, toast]);
 
   const enableChannel = useCallback(async () => {
     await fetch('/integrations/enable', {
