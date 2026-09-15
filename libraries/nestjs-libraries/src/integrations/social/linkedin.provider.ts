@@ -218,7 +218,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     const credentials = this.oauthCredentials(clientInformation);
     const url = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${
       credentials.clientId
-    }&prompt=none&redirect_uri=${encodeURIComponent(
+    }&redirect_uri=${encodeURIComponent(
       this.redirectUri()
     )}&state=${state}&scope=${encodeURIComponent(this.scopes.join(' '))}`;
     return {

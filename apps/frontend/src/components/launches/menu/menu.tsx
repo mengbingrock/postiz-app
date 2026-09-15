@@ -35,7 +35,12 @@ import copy from 'copy-to-clipboard';
 const LINKEDIN_PERMITTED_SERVICES_URL =
   'https://www.linkedin.com/mypreferences/d/data-sharing-for-permitted-services';
 
-const linkedinPageIdentifiers = new Set(['linkedin-page', 'linkedin-page-byo']);
+const linkedinIdentifiers = new Set([
+  'linkedin',
+  'linkedin-byo',
+  'linkedin-page',
+  'linkedin-page-byo',
+]);
 
 export const Menu: FC<{
   canEnable: boolean;
@@ -132,12 +137,10 @@ export const Menu: FC<{
     onChange(false);
   }, [t]);
   const deleteChannel = useCallback(async () => {
-    const isLinkedinPage = linkedinPageIdentifiers.has(
-      findIntegration?.identifier
-    );
+    const isLinkedin = linkedinIdentifiers.has(findIntegration?.identifier);
     if (
       !(await deleteDialog(
-        isLinkedinPage
+        isLinkedin
           ? t(
               'delete_linkedin_channel_and_permission',
               'Delete this channel, then remove its connected app from LinkedIn Permitted services. LinkedIn will open that page after deletion so a new connection must show the consent screen.'
@@ -187,7 +190,7 @@ export const Menu: FC<{
         // Silently ignore
       }
     }
-    if (isLinkedinPage) {
+    if (isLinkedin) {
       toast.show(
         t(
           'linkedin_channel_deleted_remove_permission',

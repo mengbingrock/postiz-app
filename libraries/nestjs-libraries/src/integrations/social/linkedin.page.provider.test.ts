@@ -1,6 +1,46 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LinkedinPageProvider } from './linkedin.page.provider';
+import { LinkedinProvider } from './linkedin.provider';
+
+test('LinkedIn Personal does not request silent authorization', async () => {
+  const previous = {
+    frontendUrl: process.env.FRONTEND_URL,
+    linkedinClientId: process.env.LINKEDIN_CLIENT_ID,
+    linkedinClientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+  };
+
+  process.env.FRONTEND_URL = 'https://post.example.test';
+  process.env.LINKEDIN_CLIENT_ID = 'personal-client-id';
+  process.env.LINKEDIN_CLIENT_SECRET = 'personal-client-secret';
+
+  try {
+    const provider = new LinkedinProvider();
+    const { url } = await provider.generateAuthUrl();
+    const authorization = new URL(url);
+
+    assert.equal(
+      authorization.searchParams.get('client_id'),
+      'personal-client-id'
+    );
+    assert.equal(
+      authorization.searchParams.get('redirect_uri'),
+      'https://post.example.test/integrations/social/linkedin'
+    );
+    assert.equal(authorization.searchParams.has('prompt'), false);
+  } finally {
+    const restore = (name: string, value: string | undefined) => {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    };
+    restore('FRONTEND_URL', previous.frontendUrl);
+    restore('LINKEDIN_CLIENT_ID', previous.linkedinClientId);
+    restore('LINKEDIN_CLIENT_SECRET', previous.linkedinClientSecret);
+  }
+});
 
 test('LinkedIn Page uses its dedicated Community Management app', async () => {
   const previous = {
