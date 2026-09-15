@@ -9,11 +9,13 @@ export const metaProbeProviders = new Set(['facebook', 'instagram']);
 
 export const linkedinPageProbeProviders = new Set(['linkedin-page-byo']);
 
-export const linkedinPersonalProbeProviders = new Set(['linkedin-byo']);
+export const linkedinPersonalProbeProviders = new Set([
+  'linkedin',
+  'linkedin-byo',
+]);
 
 export const refreshProbeProviders = new Set([
   'gmb',
-  'linkedin',
   'linkedin-page',
   'youtube',
 ]);

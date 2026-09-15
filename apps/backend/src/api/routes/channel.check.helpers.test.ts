@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   hasLiveChannelProbe,
+  linkedinPersonalProbeProviders,
   metaChannelAccessToken,
+  refreshProbeProviders,
 } from './channel.check.helpers';
 
 describe('channel check helpers', () => {
@@ -22,5 +24,11 @@ describe('channel check helpers', () => {
     expect(hasLiveChannelProbe('linkedin-page-byo')).toBe(true);
     expect(hasLiveChannelProbe('linkedin-byo')).toBe(true);
     expect(hasLiveChannelProbe('unknown-provider')).toBe(false);
+  });
+
+  it('checks LinkedIn personal channels with their access token', () => {
+    expect(linkedinPersonalProbeProviders.has('linkedin')).toBe(true);
+    expect(linkedinPersonalProbeProviders.has('linkedin-byo')).toBe(true);
+    expect(refreshProbeProviders.has('linkedin')).toBe(false);
   });
 });
