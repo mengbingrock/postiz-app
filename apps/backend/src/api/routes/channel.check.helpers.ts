@@ -14,6 +14,8 @@ export const linkedinPersonalProbeProviders = new Set([
   'linkedin-byo',
 ]);
 
+export const xProbeProviders = new Set(['x']);
+
 export const refreshProbeProviders = new Set([
   'gmb',
   'linkedin-page',
@@ -25,6 +27,7 @@ export const hasLiveChannelProbe = (providerIdentifier: string) =>
   metaProbeProviders.has(providerIdentifier) ||
   linkedinPageProbeProviders.has(providerIdentifier) ||
   linkedinPersonalProbeProviders.has(providerIdentifier) ||
+  xProbeProviders.has(providerIdentifier) ||
   refreshProbeProviders.has(providerIdentifier);
 
 export const metaChannelAccessToken = (

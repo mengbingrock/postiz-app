@@ -457,6 +457,11 @@ export class XProvider extends SocialAbstract implements SocialProvider {
     });
   }
 
+  async checkConnection(accessToken: string) {
+    const client = await this.getClient(accessToken);
+    return client.v2.me();
+  }
+
   private signOAuth1(
     method: string,
     url: string,

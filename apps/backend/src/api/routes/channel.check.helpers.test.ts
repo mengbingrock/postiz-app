@@ -4,6 +4,7 @@ import {
   linkedinPersonalProbeProviders,
   metaChannelAccessToken,
   refreshProbeProviders,
+  xProbeProviders,
 } from './channel.check.helpers';
 
 describe('channel check helpers', () => {
@@ -23,6 +24,7 @@ describe('channel check helpers', () => {
     expect(hasLiveChannelProbe('chineseinla')).toBe(true);
     expect(hasLiveChannelProbe('linkedin-page-byo')).toBe(true);
     expect(hasLiveChannelProbe('linkedin-byo')).toBe(true);
+    expect(hasLiveChannelProbe('x')).toBe(true);
     expect(hasLiveChannelProbe('unknown-provider')).toBe(false);
   });
 
@@ -30,5 +32,10 @@ describe('channel check helpers', () => {
     expect(linkedinPersonalProbeProviders.has('linkedin')).toBe(true);
     expect(linkedinPersonalProbeProviders.has('linkedin-byo')).toBe(true);
     expect(refreshProbeProviders.has('linkedin')).toBe(false);
+  });
+
+  it('routes X through its access-token probe', () => {
+    expect(xProbeProviders.has('x')).toBe(true);
+    expect(refreshProbeProviders.has('x')).toBe(false);
   });
 });

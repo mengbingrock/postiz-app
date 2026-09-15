@@ -41,6 +41,7 @@ import { uniqBy } from 'lodash';
 import { RefreshIntegrationService } from '@gitroom/nestjs-libraries/integrations/refresh.integration.service';
 import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
+import { XProvider } from '@gitroom/nestjs-libraries/integrations/social/x.provider';
 import {
   RedditAgentBrowserInput,
   RedditAgentProvider,
@@ -57,6 +58,7 @@ import {
   metaChannelAccessToken,
   metaProbeProviders,
   refreshProbeProviders,
+  xProbeProviders,
 } from '@gitroom/backend/api/routes/channel.check.helpers';
 import {
   chineseInLAProxyConfigured,
@@ -305,6 +307,48 @@ export class IntegrationsController {
     );
   }
 
+  private async checkXChannel(integration: Integration) {
+    const provider = this._integrationManager.getSocialIntegration(
+      'x'
+    ) as XProvider;
+
+    try {
+      const result = await provider.checkConnection(integration.token);
+      if (result?.data?.id) {
+        return this.channelCheckResult(
+          integration,
+          'working',
+          'X accepted the saved account access token.',
+          true
+        );
+      }
+
+      return this.channelCheckResult(
+        integration,
+        'failed',
+        'X returned an unexpected response. Try the check again before reconnecting.',
+        true
+      );
+    } catch (error) {
+      const status = Number((error as { code?: number })?.code || 0);
+      if (status === 401 || status === 403) {
+        return this.channelCheckResult(
+          integration,
+          'reconnect_required',
+          'X rejected the saved account access token. Reconnect this channel.',
+          true
+        );
+      }
+
+      return this.channelCheckResult(
+        integration,
+        'failed',
+        `The X health check failed${status ? ` (HTTP ${status})` : ''}. Try again before reconnecting.`,
+        true
+      );
+    }
+  }
+
   private async checkRefreshableChannel(integration: Integration) {
     if (!integration.refreshToken) {
       return this.channelCheckResult(
@@ -450,6 +494,9 @@ export class IntegrationsController {
       }
       if (linkedinPersonalProbeProviders.has(integration.providerIdentifier)) {
         return await this.checkLinkedInPersonalChannel(integration);
+      }
+      if (xProbeProviders.has(integration.providerIdentifier)) {
+        return await this.checkXChannel(integration);
       }
       if (refreshProbeProviders.has(integration.providerIdentifier)) {
         return await this.checkRefreshableChannel(integration);
