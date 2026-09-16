@@ -25,7 +25,9 @@ import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 
-const facebookApiVersion = () =>
+// Shared by every Meta Graph provider (Facebook, Instagram via Facebook
+// Login) so one env var moves them together.
+export const facebookApiVersion = () =>
   process.env.FACEBOOK_GRAPH_API_VERSION || 'v26.0';
 const facebookGraphUrl = (path: string) =>
   `https://graph.facebook.com/${facebookApiVersion()}${
