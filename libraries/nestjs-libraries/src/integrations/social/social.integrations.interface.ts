@@ -39,6 +39,12 @@ export interface IAuthenticator {
   generateAuthUrl(
     clientInformation?: ClientInformation
   ): Promise<GenerateAuthUrlResponse>;
+  /**
+   * Optional live health probe used by "Check all channels". Providers that
+   * can cheaply confirm the stored credentials still work implement this so
+   * the check is not reported as "Not live-verified".
+   */
+  checkChannel?(integration: Integration): Promise<ChannelProbeResult>;
   analytics?(
     id: string,
     accessToken: string,
@@ -71,6 +77,12 @@ export interface AnalyticsData {
   data: Array<{ total: string; date: string }>;
   percentageChange: number;
 }
+
+// Result of a provider's optional live health probe (see checkChannel).
+export type ChannelProbeResult = {
+  status: 'working' | 'reconnect_required' | 'failed';
+  message: string;
+};
 
 export type GenerateAuthUrlResponse = {
   url: string;

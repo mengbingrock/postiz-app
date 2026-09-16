@@ -1,5 +1,6 @@
 import {
   AuthTokenDetails,
+  ChannelProbeResult,
   ClientInformation,
   OAuthCredentialSetup,
   PendingCheckResponse,
@@ -313,6 +314,64 @@ export abstract class PostizCloudProvider
       access_token: accessToken,
       picture: page.picture.data.url,
       username: page.name,
+    };
+  }
+
+  // Live probe for "Check all channels": the token must still be accepted by
+  // the cloud and the cloud channel must still exist and be enabled.
+  async checkChannel(integration: Integration): Promise<ChannelProbeResult> {
+    let channels: CloudIntegration[];
+    try {
+      // Plain fetch: the probe needs the HTTP status to classify, and must
+      // never retry or throw the workflow-oriented errors this.fetch raises.
+      const response = await fetch(
+        `${cloudBackendUrl()}/public/v1/integrations`,
+        {
+          headers: this.cloudHeaders(integration.token),
+          signal: AbortSignal.timeout(20_000),
+        }
+      );
+      if (response.status === 401 || response.status === 403) {
+        return {
+          status: 'reconnect_required',
+          message:
+            'Postiz Cloud rejected the stored token (revoked or rotated). Reconnect this channel.',
+        };
+      }
+      if (!response.ok) {
+        return {
+          status: 'failed',
+          message: `Postiz Cloud answered HTTP ${response.status} to the health check.`,
+        };
+      }
+      const list = await response.json();
+      channels = Array.isArray(list) ? list : [];
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Postiz Cloud did not answer.';
+      return {
+        status: error instanceof ChannelSetupError ? 'reconnect_required' : 'failed',
+        message,
+      };
+    }
+    const channel = channels.find(
+      (candidate) => candidate.id === integration.internalId
+    );
+    if (!channel) {
+      return {
+        status: 'reconnect_required',
+        message: `Postiz Cloud no longer lists this ${this.spec.channelLabel} channel. Reconnect it there (or via the invite link), then reconnect this channel.`,
+      };
+    }
+    if (channel.disabled) {
+      return {
+        status: 'reconnect_required',
+        message: `The ${this.spec.channelLabel} channel is disabled in Postiz Cloud.`,
+      };
+    }
+    return {
+      status: 'working',
+      message: `Postiz Cloud accepted the token and still lists "${channel.name}" (${channel.identifier}).`,
     };
   }
 

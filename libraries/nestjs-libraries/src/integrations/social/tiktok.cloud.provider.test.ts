@@ -124,6 +124,31 @@ test('TikTok via Postiz Cloud fetches the cloud org invite link for TikTok', asy
   );
 });
 
+test('TikTok via Postiz Cloud live-verifies the channel against the cloud', async () => {
+  const provider = new TiktokCloudProvider();
+  await withFetch(
+    () => ({ body: cloudIntegrations }),
+    async () => {
+      const ok = await provider.checkChannel({ token: 'pos_token', internalId: 'cloud-tt-1' } as any);
+      assert.equal(ok.status, 'working');
+      assert.match(ok.message, /truegritai/);
+
+      const gone = await provider.checkChannel({ token: 'pos_token', internalId: 'cloud-missing' } as any);
+      assert.equal(gone.status, 'reconnect_required');
+
+      const disabled = await provider.checkChannel({ token: 'pos_token', internalId: 'cloud-tt-2' } as any);
+      assert.equal(disabled.status, 'reconnect_required');
+    }
+  );
+  await withFetch(
+    () => ({ status: 401, body: { message: 'Unauthorized' } }),
+    async () => {
+      const revoked = await provider.checkChannel({ token: 'pos_token', internalId: 'cloud-tt-1' } as any);
+      assert.equal(revoked.status, 'reconnect_required');
+    }
+  );
+});
+
 test('TikTok via Postiz Cloud explains when the cloud account has no TikTok channel', async () => {
   await withFetch(
     () => ({ body: [{ id: 'x', name: 'x', identifier: 'linkedin' }] }),

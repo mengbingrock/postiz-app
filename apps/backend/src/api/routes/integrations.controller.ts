@@ -455,9 +455,13 @@ export class IntegrationsController {
         false
       );
     }
+    const probeProvider = this._integrationManager.getSocialIntegration(
+      integration.providerIdentifier
+    );
     if (
       integration.refreshNeeded &&
-      !hasLiveChannelProbe(integration.providerIdentifier)
+      !hasLiveChannelProbe(integration.providerIdentifier) &&
+      !probeProvider?.checkChannel
     ) {
       return this.channelCheckResult(
         integration,
@@ -468,6 +472,16 @@ export class IntegrationsController {
     }
 
     try {
+      // A provider that ships its own live probe wins over the static sets.
+      if (probeProvider?.checkChannel) {
+        const probe = await probeProvider.checkChannel(integration);
+        return this.channelCheckResult(
+          integration,
+          probe.status,
+          probe.message,
+          true
+        );
+      }
       if (integration.providerIdentifier === 'rednote') {
         await this.configureRedNoteEgress(
           integration.organizationId,
