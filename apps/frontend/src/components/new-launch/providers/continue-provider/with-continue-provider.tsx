@@ -73,10 +73,6 @@ export function withContinueProvider<TItem, TSelection>(
     const [setupError, setSetupError] = useState<string | null>(null);
 
     const loadData = useCallback(async () => {
-      // Skip fetch if initial data was provided
-      if (initialData) {
-        return initialData;
-      }
       try {
         const result = await call.get(endpoint);
         // A 400 from the function route carries the provider's own reason
@@ -95,15 +91,18 @@ export function withContinueProvider<TItem, TSelection>(
       } catch (e) {
         // Handle error silently
       }
-    }, [initialData]);
+    }, []);
 
-    const { data, isLoading, mutate } = useSWR(
-      initialData ? null : swrKey,
-      loadData,
-      SWR_OPTIONS
-    );
+    // The list fetched at connect time is only a starting point: keep the
+    // SWR key alive so "reload" (e.g. after an invite link was accepted in
+    // another tab) really refetches instead of being a no-op.
+    const { data, isLoading, mutate } = useSWR(swrKey, loadData, {
+      ...SWR_OPTIONS,
+      fallbackData: initialData,
+      revalidateOnMount: !initialData,
+    });
 
-    const resolvedData = initialData || data;
+    const resolvedData = data ?? initialData;
     const extra = renderExtra
       ? renderExtra({
           call: (name: string, customData?: any) => call.get(name, customData),
