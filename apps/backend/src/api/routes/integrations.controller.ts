@@ -455,6 +455,14 @@ export class IntegrationsController {
         false
       );
     }
+    if (integration.inBetweenSteps) {
+      return this.channelCheckResult(
+        integration,
+        'unverified',
+        'This channel has not finished setup yet (the page/account was never picked), so nothing was probed.',
+        false
+      );
+    }
     const probeProvider = this._integrationManager.getSocialIntegration(
       integration.providerIdentifier
     );
