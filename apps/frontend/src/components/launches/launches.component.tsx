@@ -88,6 +88,7 @@ const channelPlatformLabels: Record<string, string> = {
   'reddit-agent': 'Reddit',
   'tajima-website': 'Website',
   'tiktok-cloud': 'TikTok (via Postiz Cloud)',
+  'gmb-cloud': 'Google Business (via Postiz Cloud)',
   youtube: 'YouTube',
 };
 

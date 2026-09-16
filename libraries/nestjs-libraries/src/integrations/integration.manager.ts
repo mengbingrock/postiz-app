@@ -15,6 +15,7 @@ import { YoutubeProvider } from '@gitroom/nestjs-libraries/integrations/social/y
 import { TiktokProvider } from '@gitroom/nestjs-libraries/integrations/social/tiktok.provider';
 import { TiktokBusinessProvider } from '@gitroom/nestjs-libraries/integrations/social/tiktok.business.provider';
 import { TiktokCloudProvider } from '@gitroom/nestjs-libraries/integrations/social/tiktok.cloud.provider';
+import { GmbCloudProvider } from '@gitroom/nestjs-libraries/integrations/social/gmb.cloud.provider';
 import { PinterestProvider } from '@gitroom/nestjs-libraries/integrations/social/pinterest.provider';
 import { DribbbleProvider } from '@gitroom/nestjs-libraries/integrations/social/dribbble.provider';
 import { LinkedinPageProvider } from '@gitroom/nestjs-libraries/integrations/social/linkedin.page.provider';
@@ -67,6 +68,7 @@ export const socialIntegrationList: Array<SocialAbstract & SocialProvider> = [
   new TiktokProvider(),
   new TiktokBusinessProvider(),
   new TiktokCloudProvider(),
+  new GmbCloudProvider(),
   new PinterestProvider(),
   new DribbbleProvider(),
   new DiscordProvider(),

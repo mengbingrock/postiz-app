@@ -7,6 +7,7 @@ import { GmbContinue } from '@gitroom/frontend/components/new-launch/providers/c
 import { YoutubeContinue } from '@gitroom/frontend/components/new-launch/providers/continue-provider/youtube/youtube.continue';
 import { TumblrContinue } from '@gitroom/frontend/components/new-launch/providers/continue-provider/tumblr/tumblr.continue';
 import { TiktokCloudContinue } from '@gitroom/frontend/components/new-launch/providers/continue-provider/tiktok-cloud/tiktok.cloud.continue';
+import { GmbCloudContinue } from '@gitroom/frontend/components/new-launch/providers/continue-provider/gmb-cloud/gmb.cloud.continue';
 
 export const continueProviderList = {
   instagram: InstagramContinue,
@@ -17,4 +18,5 @@ export const continueProviderList = {
   youtube: YoutubeContinue,
   tumblr: TumblrContinue,
   'tiktok-cloud': TiktokCloudContinue,
+  'gmb-cloud': GmbCloudContinue,
 };

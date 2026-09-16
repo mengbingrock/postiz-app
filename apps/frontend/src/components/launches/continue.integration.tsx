@@ -273,6 +273,7 @@ export const ContinueIntegration: FC<{
       tumblr: 'Tumblr',
       'tiktok-business': 'TikTok Business',
       'tiktok-cloud': 'TikTok (via Postiz Cloud)',
+      'gmb-cloud': 'Google Business (via Postiz Cloud)',
       chineseinla: 'ChineseInLA',
     };
     return names[provider] || provider;

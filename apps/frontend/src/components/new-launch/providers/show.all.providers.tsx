@@ -114,6 +114,10 @@ export const Providers = [
     component: TiktokProvider,
   },
   {
+    identifier: 'gmb-cloud',
+    component: GmbProvider,
+  },
+  {
     identifier: 'pinterest',
     component: PinterestProvider,
   },

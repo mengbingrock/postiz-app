@@ -1,3 +1,15 @@
+# Channels via Postiz Cloud (TikTok, Google Business Profile)
+
+Both `tiktok-cloud` and `gmb-cloud` are built on the same base
+(`postiz.cloud.provider.ts` + the `createPostizCloudContinue` picker): a
+platform whose app needs an audit/approval is published through the channel
+connected in a Postiz Cloud account. Everything below is written for TikTok;
+**Google Business (via Postiz Cloud)** works identically with cloud channel
+type `gmb` (invite link → Google consent → pick the location), the
+`GmbSettingsDto` settings (topic type, call to action, event/offer fields)
+and text-only posts allowed — and it sidesteps the Business Profile API
+enablement / quota-approval problem of a Google Cloud project of our own.
+
 # TikTok via Postiz Cloud
 
 Publishing to TikTok normally needs a TikTok developer app that has passed

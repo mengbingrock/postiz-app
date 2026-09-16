@@ -39,6 +39,7 @@ export type AllProvidersSettings =
   | ProviderExtension<'tiktok', TikTokDto>
   | ProviderExtension<'tiktok-business', TikTokDto>
   | ProviderExtension<'tiktok-cloud', TikTokDto>
+  | ProviderExtension<'gmb-cloud', GmbSettingsDto>
   | ProviderExtension<'discord', DiscordDto>
   | ProviderExtension<'slack', SlackDto>
   | ProviderExtension<'kick', KickDto>
@@ -85,6 +86,7 @@ export const allProviders = (setEmpty?: any) => {
     { value: TikTokDto, name: 'tiktok' },
     { value: TikTokDto, name: 'tiktok-business' },
     { value: TikTokDto, name: 'tiktok-cloud' },
+    { value: GmbSettingsDto, name: 'gmb-cloud' },
     { value: DiscordDto, name: 'discord' },
     { value: SlackDto, name: 'slack' },
     { value: KickDto, name: 'kick' },
