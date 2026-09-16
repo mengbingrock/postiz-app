@@ -1425,7 +1425,11 @@ export class IntegrationsController {
       body.id
     );
     if (!getIntegration) {
-      throw new Error('Invalid integration');
+      // Typically a channel-setup dialog whose in-between stub is gone
+      // (closed elsewhere, removed, or a stale tab): say so instead of a 500.
+      throw new BadRequestException(
+        'This channel setup session is no longer valid. Close the dialog and start again from Add Channel.'
+      );
     }
 
     const integrationProvider = this._integrationManager.getSocialIntegration(
