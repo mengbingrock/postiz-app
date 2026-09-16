@@ -16,7 +16,10 @@ import { ApiTags } from '@nestjs/swagger';
 import { NotEnoughScopesFilter } from '@gitroom/nestjs-libraries/integrations/integration.missing.scopes';
 import { AuthService } from '@gitroom/helpers/auth/auth.service';
 import { AuthTokenDetails } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
-import { NotEnoughScopes } from '@gitroom/nestjs-libraries/integrations/social.abstract';
+import {
+  ChannelSetupError,
+  NotEnoughScopes,
+} from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import {
   AuthorizationActions,
   Sections,
@@ -137,12 +140,11 @@ export class NoAuthIntegrationsController {
           );
         let auth;
         if (integration === 'chineseinla' && chineseInLAProxyConfigured()) {
-          const egress =
-            await this._egressRelayService.ensureChineseInLALease(
-              org.id,
-              undefined,
-              10
-            );
+          const egress = await this._egressRelayService.ensureChineseInLALease(
+            org.id,
+            undefined,
+            10
+          );
           try {
             const proxyUrl = egress.lease?.proxyUrl;
             if (!proxyUrl) {
@@ -150,9 +152,10 @@ export class NoAuthIntegrationsController {
                 'Postiz did not allocate a tenant-specific ChineseInLA proxy.'
               );
             }
-            await (
-              integrationProvider as ChineseInLAProvider
-            ).configureEgress(body.code, proxyUrl);
+            await (integrationProvider as ChineseInLAProvider).configureEgress(
+              body.code,
+              proxyUrl
+            );
             auth = await authenticate();
           } finally {
             this._egressRelayService.stopLease(
@@ -217,7 +220,12 @@ export class NoAuthIntegrationsController {
 
         return res(auth);
       } catch (err) {
-        if (err instanceof NotEnoughScopes) {
+        // A provider that knows why the platform refused the login says so
+        // with ChannelSetupError; show that instead of a blind failure.
+        if (
+          err instanceof NotEnoughScopes ||
+          err instanceof ChannelSetupError
+        ) {
           return res({
             error: err.message,
             accessToken: '',
