@@ -79,3 +79,51 @@ test('untrusted and path-traversing media URLs remain remote URLs', async () => 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('unknownErrorMessage quotes the platform detail instead of a bare Unknown Error', async () => {
+  const { unknownErrorMessage } = await import('./social.abstract');
+  assert.equal(
+    unknownErrorMessage(
+      JSON.stringify({
+        detail: 'credits depleted',
+        status: 402,
+        title: 'Payment Required',
+        type: 'https://api.x.com/2/problems/credits-depleted',
+      }),
+      402
+    ),
+    'Unknown Error (HTTP 402): credits depleted: Payment Required'
+  );
+  assert.equal(
+    unknownErrorMessage(JSON.stringify({ error: { message: 'Bad token' } })),
+    'Unknown Error: Bad token'
+  );
+  assert.equal(unknownErrorMessage('{}', 500), 'Unknown Error');
+  assert.equal(unknownErrorMessage('<html>oops</html>'), 'Unknown Error');
+});
+
+test('fetch reports the platform detail when handleErrors has no rule', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    ({
+      status: 402,
+      text: async () =>
+        JSON.stringify({
+          detail: 'credits depleted',
+          title: 'Payment Required',
+        }),
+    } as Response)) as typeof fetch;
+  try {
+    const provider = new TestSocialProvider();
+    await assert.rejects(
+      () => provider.fetch('https://api.example.test/post', { body: '{}' }),
+      (error: any) => {
+        assert.equal(error.type, 'bad_body');
+        assert.match(error.message, /HTTP 402.*credits depleted/);
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});

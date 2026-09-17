@@ -9,11 +9,13 @@ import {
 import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import dayjs from 'dayjs';
 import {
+  ChannelSetupError,
   SocialAbstract,
   ValidityMedia,
 } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 import { InstagramDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/instagram.dto';
 import { InstagramProvider } from '@gitroom/nestjs-libraries/integrations/social/instagram.provider';
+import { facebookApiVersion } from '@gitroom/nestjs-libraries/integrations/social/facebook.provider';
 import { Integration } from '@prisma/client';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
@@ -27,13 +29,24 @@ const instagramOAuthCredentialSetup: OAuthCredentialSetup = {
   documentationUrl:
     'https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/',
   help: [
-    'Add the Manage messaging & content on Instagram use case and choose API setup with Instagram login.',
-    'Add the required content permissions and configure Instagram Business Login.',
-    'Add the Instagram account as a tester while the app is unpublished.',
+    'Add the Manage messaging & content on Instagram use case and open API setup with Instagram login.',
+    'Use the Instagram App ID and Instagram App Secret shown on that page, not the Meta App ID.',
+    'Under "Set up Instagram business login", add this redirect URL: <your Postiz URL>/integrations/social/instagram-standalone.',
+    'Add the required content permissions (instagram_business_basic, instagram_business_content_publish, instagram_business_manage_comments, instagram_business_manage_insights).',
+    'While the app is unpublished, add the Instagram account under "Generate access tokens" (Add account) and accept the tester invite in the Instagram app (Settings → Website permissions → Apps and websites).',
+    'The Instagram account must be a Business or Creator account. It does not need a Facebook Page.',
   ],
 };
 
 const instagramProvider = new InstagramProvider();
+
+// Meta's Instagram Login error bodies come in two shapes:
+// { error_type, code, error_message } from api.instagram.com and
+// { error: { message, type, code } } from graph.instagram.com.
+const instagramErrorMessage = (body: any): string | undefined =>
+  body?.error_message ||
+  body?.error?.message ||
+  (typeof body?.error === 'string' ? body.error : undefined);
 
 @Rules(
   "Instagram should have at least one attachment, if it's a story, it can have only one picture"
@@ -60,6 +73,16 @@ export class InstagramStandaloneProvider
   editor = 'normal' as const;
   maxLength() {
     return 2200;
+  }
+
+  validateCustomOAuthCredentials(clientInformation: ClientInformation) {
+    if (!/^\d{5,32}$/.test(clientInformation.client_id)) {
+      return 'Enter the numeric Instagram App ID (from API setup with Instagram login)';
+    }
+    if (!/^\S{16,256}$/.test(clientInformation.client_secret)) {
+      return 'Enter a valid Instagram App Secret';
+    }
+    return undefined;
   }
 
   override async checkValidity(
@@ -106,7 +129,7 @@ export class InstagramStandaloneProvider
       profile_picture_url = '',
     } = await (
       await fetch(
-        `https://graph.instagram.com/v21.0/me?fields=user_id,username,name,profile_picture_url&access_token=${access_token}`
+        `https://graph.instagram.com/${facebookApiVersion()}/me?fields=user_id,username,name,profile_picture_url&access_token=${access_token}`
       )
     ).json();
 
@@ -178,7 +201,21 @@ export class InstagramStandaloneProvider
       })
     ).json();
 
-    const { access_token, expires_in, ...all } = await (
+    // Without this the dialog only ever says "Authentication failed", while
+    // Meta's body says exactly what is wrong (redirect URL not configured,
+    // wrong app id, account not a tester of the unpublished app, ...).
+    if (!getAccessToken?.access_token) {
+      throw new ChannelSetupError(
+        `Instagram rejected the login code${
+          instagramErrorMessage(getAccessToken)
+            ? `: ${instagramErrorMessage(getAccessToken)}`
+            : ''
+        }. Check that the Instagram App ID and Secret are the ones from "API setup with Instagram login", that Instagram business login lists this redirect URL, and that the Instagram account is a tester of the app while it is unpublished.`
+      );
+    }
+
+    const shortLivedScopes = getAccessToken.permissions;
+    const longLived = await (
       await fetch(
         'https://graph.instagram.com/access_token' +
           '?grant_type=ig_exchange_token' +
@@ -187,14 +224,34 @@ export class InstagramStandaloneProvider
           `&access_token=${getAccessToken.access_token}`
       )
     ).json();
+    const access_token = longLived?.access_token;
+    if (!access_token) {
+      throw new ChannelSetupError(
+        `Instagram did not issue a long-lived token${
+          instagramErrorMessage(longLived)
+            ? `: ${instagramErrorMessage(longLived)}`
+            : ''
+        }.`
+      );
+    }
 
-    this.checkScopes(this.scopes, getAccessToken.permissions);
+    this.checkScopes(this.scopes, shortLivedScopes ?? []);
 
-    const { user_id, name, username, profile_picture_url } = await (
+    const profile = await (
       await fetch(
-        `https://graph.instagram.com/v21.0/me?fields=user_id,username,name,profile_picture_url&access_token=${access_token}`
+        `https://graph.instagram.com/${facebookApiVersion()}/me?fields=user_id,username,name,profile_picture_url&access_token=${access_token}`
       )
     ).json();
+    const { user_id, name, username, profile_picture_url } = profile ?? {};
+    if (!user_id) {
+      throw new ChannelSetupError(
+        `Instagram returned no profile for this token${
+          instagramErrorMessage(profile)
+            ? `: ${instagramErrorMessage(profile)}`
+            : ''
+        }. The account must be a Business or Creator account.`
+      );
+    }
 
     return {
       id: user_id,

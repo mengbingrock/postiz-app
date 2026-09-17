@@ -95,11 +95,14 @@ export function withContinueProvider<TItem, TSelection>(
 
     // The list fetched at connect time is only a starting point: keep the
     // SWR key alive so "reload" (e.g. after an invite link was accepted in
-    // another tab) really refetches instead of being a no-op.
+    // another tab) really refetches instead of being a no-op. An empty
+    // initial list is refetched through the function route so the
+    // provider's setup error (a 400 with the reason) reaches the empty state
+    // instead of the generic message.
     const { data, isLoading, mutate } = useSWR(swrKey, loadData, {
       ...SWR_OPTIONS,
       fallbackData: initialData,
-      revalidateOnMount: !initialData,
+      revalidateOnMount: !initialData?.length,
     });
 
     const resolvedData = data ?? initialData;
@@ -134,7 +137,16 @@ export function withContinueProvider<TItem, TSelection>(
       );
     }, [resolvedData, existingId]);
 
-    if (!isLoading && !resolvedData?.length) {
+    if (!resolvedData?.length) {
+      // While the empty initial list is being re-checked through the
+      // function route, don't flash the generic advice.
+      if (isLoading) {
+        return (
+          <div className="text-center flex justify-center items-center text-[18px] leading-[26px] min-h-[300px]">
+            {t('loading', 'Loading...')}
+          </div>
+        );
+      }
       return (
         <div className="text-center flex flex-col justify-center items-center text-[18px] leading-[26px] min-h-[300px] gap-[16px]">
           {setupError ? (
@@ -176,7 +188,11 @@ export function withContinueProvider<TItem, TSelection>(
           ))}
         </div>
         <div>
-          <Button disabled={!selection || isSaving} loading={isSaving} onClick={handleSave}>
+          <Button
+            disabled={!selection || isSaving}
+            loading={isSaving}
+            onClick={handleSave}
+          >
             {t('save', 'Save')}
           </Button>
         </div>

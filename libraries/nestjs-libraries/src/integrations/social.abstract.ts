@@ -108,6 +108,42 @@ export class NotEnoughScopes {
   ) {}
 }
 
+// A platform response the provider's handleErrors did not recognise is still
+// the best explanation we have: quote the human-readable part of it (the
+// common `detail` / `title` / `message` shapes) instead of a bare
+// "Unknown Error", so the post's error and the Errors log say what the
+// platform actually said (e.g. X's 402 "credits depleted").
+const MAX_UNKNOWN_ERROR_DETAIL = 300;
+export function unknownErrorMessage(json: string, status?: number): string {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    parsed = undefined;
+  }
+  const candidates = parsed
+    ? [
+        parsed.detail,
+        parsed.title,
+        parsed.message,
+        parsed.error_description,
+        parsed.error?.message,
+        typeof parsed.error === 'string' ? parsed.error : undefined,
+        parsed.errors?.[0]?.message,
+        parsed.errors?.[0]?.detail,
+      ]
+    : [];
+  const parts = candidates
+    .filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+    .map((c) => c.trim());
+  const unique = parts.filter((p, i) => parts.indexOf(p) === i);
+  if (!unique.length) {
+    return 'Unknown Error';
+  }
+  const detail = unique.join(': ').slice(0, MAX_UNKNOWN_ERROR_DETAIL);
+  return `Unknown Error${status ? ` (HTTP ${status})` : ''}: ${detail}`;
+}
+
 function safeStringify(obj: any) {
   const seen = new WeakSet();
 
@@ -432,7 +468,7 @@ export abstract class SocialAbstract {
         identifier,
         json,
         '{}',
-        handleError?.value || 'Unknown Error'
+        handleError?.value || unknownErrorMessage(json, status)
       );
     }
   }
@@ -537,7 +573,7 @@ export abstract class SocialAbstract {
         identifier,
         totalRetries + 1,
         ignoreConcurrency,
-        handleError?.value || 'Unknown Error'
+        handleError?.value || unknownErrorMessage(json, request.status)
       );
     }
 
@@ -549,17 +585,12 @@ export abstract class SocialAbstract {
         identifier,
         totalRetries + 1,
         ignoreConcurrency,
-        handleError?.value || 'Unknown Error'
+        handleError?.value || unknownErrorMessage(json, request.status)
       );
     }
 
     if (handleError?.type === 'disconnect') {
-      throw new Disconnect(
-        identifier,
-        json,
-        options.body!,
-        handleError?.value
-      );
+      throw new Disconnect(identifier, json, options.body!, handleError?.value);
     }
 
     if (
@@ -579,7 +610,7 @@ export abstract class SocialAbstract {
       identifier,
       json,
       options.body!,
-      handleError?.value || 'Unknown Error'
+      handleError?.value || unknownErrorMessage(json, request.status)
     );
   }
 

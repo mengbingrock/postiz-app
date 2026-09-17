@@ -182,13 +182,23 @@ export class XProvider extends SocialAbstract implements SocialProvider {
       return {
         type: 'bad-body',
         value: 'You are not allowed to create a post with duplicate content',
-      }
+      };
     }
 
     if (body.includes('usage-capped')) {
       return {
         type: 'bad-body',
         value: 'Posting failed - capped reached. Please try again later',
+      };
+    }
+    if (
+      body.includes('credits-depleted') ||
+      body.includes('credits depleted')
+    ) {
+      return {
+        type: 'bad-body',
+        value:
+          'X refused the post: the X developer app has no API credits left (HTTP 402 credits depleted). Add credits to the X developer account at console.x.com, then retry the post.',
       };
     }
 
@@ -209,8 +219,7 @@ export class XProvider extends SocialAbstract implements SocialProvider {
     if (body.includes('Your account is not permitted to access this feature')) {
       return {
         type: 'bad-body',
-        value:
-          'X blocked your request',
+        value: 'X blocked your request',
       };
     }
     if (body.includes('The Tweet contains an invalid URL.')) {
@@ -836,7 +845,11 @@ export class XProvider extends SocialAbstract implements SocialProvider {
     const stillProcessing: string[] = [];
     for (const mediaId of pendingData.processingIds || []) {
       let processing:
-        | { state: string; check_after_secs?: number; error?: { message?: string } }
+        | {
+            state: string;
+            check_after_secs?: number;
+            error?: { message?: string };
+          }
         | undefined;
       try {
         processing = await this.mediaProcessingStatus(client, mediaId);
