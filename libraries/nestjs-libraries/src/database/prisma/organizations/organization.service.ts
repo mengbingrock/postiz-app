@@ -71,8 +71,12 @@ export class OrganizationService {
     return this._organizationRepository.updateApiKey(orgId);
   }
 
-  getTeam(orgId: string) {
-    return this._organizationRepository.getTeam(orgId);
+  async getTeam(orgId: string) {
+    const team = await this._organizationRepository.getTeam(orgId);
+    return {
+      ...team,
+      emailProviderConfigured: this._notificationsService.hasEmailProvider(),
+    };
   }
 
   async setStreak(organizationId: string, type: 'start' | 'end') {
@@ -84,6 +88,13 @@ export class OrganizationService {
   }
 
   async inviteTeamMember(org: Organization, user: User, body: AddTeamMemberDto) {
+    if (body.sendEmail && !this._notificationsService.hasEmailProvider()) {
+      throw new HttpException(
+        'Email delivery is not configured. Turn off email delivery and copy the invitation link instead.',
+        400
+      );
+    }
+
     const timeLimit = dayjs().add(2, 'day').format('YYYY-MM-DD HH:mm:ss');
     const id = makeId(5);
     const url =

@@ -3,7 +3,7 @@
 import { Button } from '@gitroom/react/form/button';
 import { useFetch } from '@gitroom/helpers/utils/custom.fetch';
 import useSWR from 'swr';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useUser } from '@gitroom/frontend/components/layout/user.context';
 import { capitalize } from 'lodash';
 import { useModals } from '@gitroom/frontend/components/layout/new-modal';
@@ -28,18 +28,31 @@ const roles = [
     value: 'ADMIN',
   },
 ];
-export const AddMember = () => {
+const getResponseError = (data: any, fallback: string) => {
+  if (Array.isArray(data?.message)) {
+    return data.message.join(', ');
+  }
+  return data?.message || data?.error || fallback;
+};
+
+export const AddMember = ({
+  emailProviderConfigured,
+}: {
+  emailProviderConfigured: boolean;
+}) => {
   const modals = useModals();
   const fetch = useFetch();
   const toast = useToaster();
+  const t = useT();
+  const [saving, setSaving] = useState(false);
   const resolver = useMemo(() => {
     return classValidatorResolver(AddTeamMemberDto);
   }, []);
   const form = useForm({
-    values: {
+    defaultValues: {
       email: '',
       role: '',
-      sendEmail: true,
+      sendEmail: emailProviderConfigured,
     },
     resolver,
     mode: 'onChange',
@@ -50,25 +63,56 @@ export const AddMember = () => {
   });
   const submit = useCallback(
     async (values: { email: string; role: string; sendEmail: boolean }) => {
-      const { url } = await (
-        await fetch('/settings/team', {
+      setSaving(true);
+      try {
+        const response = await fetch('/settings/team', {
           method: 'POST',
           body: JSON.stringify(values),
-        })
-      ).json();
-      if (values.sendEmail) {
-        modals.closeAll();
-        toast.show(t('invitation_link_sent', 'Invitation link sent'));
-        return;
-      }
-      copy(url);
-      modals.closeAll();
-      toast.show(t('link_copied_to_clipboard', 'Link copied to clipboard'));
-    },
-    []
-  );
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            getResponseError(
+              result,
+              t('could_not_create_invitation', 'Could not create the invitation')
+            )
+          );
+        }
+        if (!result.url) {
+          throw new Error(
+            t('could_not_create_invitation', 'Could not create the invitation')
+          );
+        }
 
-  const t = useT();
+        if (values.sendEmail) {
+          modals.closeAll();
+          toast.show(t('invitation_link_sent', 'Invitation link sent'));
+          return;
+        }
+
+        if (!copy(result.url)) {
+          throw new Error(
+            t(
+              'could_not_copy_invitation_link',
+              'Invitation created, but the link could not be copied. Please allow clipboard access and try again.'
+            )
+          );
+        }
+        modals.closeAll();
+        toast.show(t('link_copied_to_clipboard', 'Link copied to clipboard'));
+      } catch (error) {
+        toast.show(
+          error instanceof Error
+            ? error.message
+            : t('could_not_create_invitation', 'Could not create the invitation'),
+          'warning'
+        );
+      } finally {
+        setSaving(false);
+      }
+    },
+    [fetch, modals, t, toast]
+  );
 
   return (
     <FormProvider {...form}>
@@ -89,15 +133,24 @@ export const AddMember = () => {
               </option>
             ))}
           </Select>
-          <div className="flex gap-[5px]">
-            <div>
-              <Checkbox name="sendEmail" />
+          {emailProviderConfigured ? (
+            <div className="flex gap-[5px]">
+              <div>
+                <Checkbox name="sendEmail" />
+              </div>
+              <div>
+                {t('send_invitation_via_email', 'Send invitation via email?')}
+              </div>
             </div>
-            <div>
-              {t('send_invitation_via_email', 'Send invitation via email?')}
+          ) : (
+            <div className="rounded-[8px] border border-newTableBorder bg-newBgColorInner p-[12px] text-[13px] text-textColor">
+              {t(
+                'email_delivery_not_configured_copy_invitation_link',
+                'Email delivery is not configured on this server. Create the invitation link, then share it with the new member.'
+              )}
             </div>
-          </div>
-          <Button type="submit" className="mt-[18px]">
+          )}
+          <Button type="submit" className="mt-[18px]" loading={saving}>
             {sendEmail ? t('send_invitation_link', 'Send Invitation Link') : t('copy_link', 'Copy Link')}
           </Button>
         </div>
@@ -117,15 +170,30 @@ export const TeamsComponent = () => {
     []
   );
   const loadTeam = useCallback(async () => {
-    return (await (await fetch('/settings/team')).json()).users as Array<{
+    const response = await fetch('/settings/team');
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        getResponseError(result, 'Could not load the team members')
+      );
+    }
+    return result as {
+      users: Array<{
       id: string;
       role: 'SUPERADMIN' | 'ADMIN' | 'USER';
       user: {
         email: string;
         id: string;
       };
-    }>;
-  }, []);
+      }>;
+      emailProviderConfigured: boolean;
+    };
+  }, [fetch]);
+  const { data, mutate } = useSWR('/api/teams', loadTeam, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    revalidateIfStale: false,
+  });
   const addMember = useCallback(() => {
     modals.openModal({
       classNames: {
@@ -133,14 +201,13 @@ export const TeamsComponent = () => {
       },
       title: t('top_title_add_member', 'Add Member'),
       withCloseButton: true,
-      children: <AddMember />,
+      children: (
+        <AddMember
+          emailProviderConfigured={!!data?.emailProviderConfigured}
+        />
+      ),
     });
-  }, [t]);
-  const { data, mutate } = useSWR('/api/teams', loadTeam, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: false,
-    revalidateIfStale: false,
-  });
+  }, [data?.emailProviderConfigured, modals, t]);
   const remove = useCallback(
     (toRemove: {
         user: {
@@ -174,7 +241,7 @@ export const TeamsComponent = () => {
       </div>
       <div className="my-[16px] mt-[16px] bg-sixth border-fifth border rounded-[4px] p-[24px] flex flex-col gap-[24px]">
         <div className="flex flex-col gap-[16px]">
-          {(data || []).map((p) => (
+          {(data?.users || []).map((p) => (
             <div key={p.user.id} className="flex items-center">
               <div className="flex-1">
                 {capitalize(p.user.email.split('@')[0]).split('.')[0]}
