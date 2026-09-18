@@ -108,98 +108,6 @@ const InviteLink: FC<{
   );
 };
 
-// The account may already be connected in the user's own Postiz Cloud
-// account rather than the shared one: their API key switches this channel to
-// that account, and the list reloads from there.
-const OwnCloudAccount: FC<{
-  channelLabel: string;
-  call: (name: string, data?: any) => Promise<any>;
-  reload: () => void;
-}> = ({ channelLabel, call, reload }) => {
-  const [open, setOpen] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>();
-  const [done, setDone] = useState<number>();
-
-  const submit = useCallback(async () => {
-    setLoading(true);
-    setError(undefined);
-    try {
-      const result = await call('useOwnCloud', { apiKey });
-      if (typeof result?.channels !== 'number') {
-        throw new Error(
-          Array.isArray(result?.message)
-            ? result.message.join(', ')
-            : result?.message || 'Could not use this Postiz Cloud account.'
-        );
-      }
-      setDone(result.channels);
-      setApiKey('');
-      reload();
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Could not use this Postiz Cloud account.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [apiKey, call, reload]);
-
-  return (
-    <div className="w-full text-left text-[13px] leading-[20px] rounded-[8px] border border-tableBorder p-[12px] flex flex-col gap-[8px]">
-      <div className="font-semibold text-[14px]">
-        Already connected {channelLabel} in your own Postiz Cloud account?
-      </div>
-      <div className="text-textColor/70">
-        Paste that account&apos;s API key (platform.postiz.com → Settings →
-        Developers → Access) and this channel will publish through it instead of
-        the shared account.
-      </div>
-      {open ? (
-        <div className="flex flex-col gap-[6px]">
-          <input
-            type="password"
-            autoComplete="off"
-            value={apiKey}
-            placeholder="Postiz Cloud API key"
-            onChange={(event) => setApiKey(event.target.value)}
-            className="w-full h-[36px] rounded-[6px] border border-newTableBorder bg-newBgColorInner px-[10px] text-[12px] text-textColor outline-none"
-          />
-          <div className="flex gap-[8px]">
-            <Button
-              type="button"
-              loading={loading}
-              disabled={!apiKey.trim() || loading}
-              onClick={submit}
-            >
-              Use this account
-            </Button>
-            <Button type="button" secondary onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <Button type="button" secondary onClick={() => setOpen(true)}>
-            Use my own Postiz Cloud account
-          </Button>
-        </div>
-      )}
-      {typeof done === 'number' ? (
-        <div className="text-textColor/70">
-          Switched to your account: {done} {channelLabel} channel
-          {done === 1 ? '' : 's'} found.
-        </div>
-      ) : null}
-      {error ? <div className="text-red-500">{error}</div> : null}
-    </div>
-  );
-};
-
 export const createPostizCloudContinue = (options: {
   key: string; // used for swr key and i18n keys, e.g. "tiktok-cloud"
   channelLabel: string;
@@ -217,7 +125,7 @@ export const createPostizCloudContinue = (options: {
       },
       {
         key: `${options.key.replace(/-/g, '_')}_connect_first`,
-        text: 'Use the invite link below to connect one, or switch to your own Postiz Cloud account, then refresh the list.',
+        text: 'Use the invite link below to connect one, then refresh the list.',
       },
     ],
     getItemId: (item) => item.id,
@@ -225,18 +133,11 @@ export const createPostizCloudContinue = (options: {
     transformSaveData: (selection) => selection,
     isSelected: (item, selection) => selection?.id === item.id,
     renderExtra: ({ call, reload }) => (
-      <>
-        <InviteLink
-          channelLabel={options.channelLabel}
-          call={call}
-          reload={reload}
-        />
-        <OwnCloudAccount
-          channelLabel={options.channelLabel}
-          call={call}
-          reload={reload}
-        />
-      </>
+      <InviteLink
+        channelLabel={options.channelLabel}
+        call={call}
+        reload={reload}
+      />
     ),
     renderItem: (item) => (
       <>

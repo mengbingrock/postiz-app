@@ -180,10 +180,6 @@ export class IntegrationService {
     );
   }
 
-  replaceToken(org: string, id: string, token: string) {
-    return this._integrationRepository.replaceIntegrationToken(org, id, token);
-  }
-
   // For providers whose page list comes from an upstream account shared by
   // every workspace (SocialProvider.sharedUpstreamAccount): drop the pages
   // another workspace already publishes through.

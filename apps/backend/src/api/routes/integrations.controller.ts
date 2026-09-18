@@ -1483,18 +1483,6 @@ export class IntegrationsController {
           getIntegration
         );
 
-        // The step swapped the credentials this channel carries (see
-        // ProviderFunctionTokenReplacement): persist them, hand back the rest.
-        if (load && typeof load.replaceToken === 'string') {
-          await this._integrationService.replaceToken(
-            org.id,
-            getIntegration.id,
-            load.replaceToken
-          );
-          const { replaceToken, ...rest } = load;
-          return rest;
-        }
-
         if (
           body.name === 'pages' &&
           integrationProvider.sharedUpstreamAccount &&

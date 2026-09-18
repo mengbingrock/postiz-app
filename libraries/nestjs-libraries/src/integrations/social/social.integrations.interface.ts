@@ -72,15 +72,6 @@ export interface IAuthenticator {
   ): Promise<{ id: string; url: string }[]>;
 }
 
-// A provider function (called through /integrations/function during channel
-// setup) may return this shape to swap the credentials the in-between channel
-// carries, e.g. after the user chose to use their own upstream account. The
-// controller persists `replaceToken` and hands the rest back to the dialog.
-export type ProviderFunctionTokenReplacement = {
-  replaceToken: string;
-  [key: string]: any;
-};
-
 export interface AnalyticsData {
   label: string;
   data: Array<{ total: string; date: string }>;

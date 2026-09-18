@@ -6,7 +6,6 @@ import {
   PendingCheckResponse,
   PostDetails,
   PostResponse,
-  ProviderFunctionTokenReplacement,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import {
@@ -287,47 +286,6 @@ export abstract class PostizCloudProvider
       picture: { data: { url: integration.picture || '' } },
       identifier: integration.identifier,
     }));
-  }
-
-  // "Use my own Postiz Cloud account": the user pastes the API key of their
-  // own cloud account (Settings → Developers → Access). The key is checked
-  // against the cloud, then stored on this channel in place of the
-  // server-wide token, so the picker - and everything after it - works
-  // against the user's own cloud org, where they connected the platform
-  // themselves.
-  async useOwnCloud(
-    _accessToken: string,
-    data: { apiKey?: string }
-  ): Promise<ProviderFunctionTokenReplacement> {
-    const apiKey = String(data?.apiKey || '').trim();
-    if (!/^[A-Za-z0-9_\-.]{16,256}$/.test(apiKey)) {
-      throw new ChannelSetupError(
-        'Paste the API key of your Postiz Cloud account (platform.postiz.com → Settings → Developers → Access).'
-      );
-    }
-    const response = await fetch(
-      `${cloudBackendUrl()}/public/v1/integrations`,
-      {
-        headers: { 'Content-Type': 'application/json', Authorization: apiKey },
-      }
-    );
-    if (response.status === 401 || response.status === 403) {
-      throw new ChannelSetupError(
-        'Postiz Cloud rejected this API key. Copy it again from platform.postiz.com → Settings → Developers → Access.'
-      );
-    }
-    if (!response.ok) {
-      throw new ChannelSetupError(
-        `Postiz Cloud answered HTTP ${response.status} while checking the API key. Try again in a moment.`
-      );
-    }
-    const list = await response.json();
-    const wanted = new Set(this.spec.cloudIdentifiers);
-    const channels = (Array.isArray(list) ? list : []).filter(
-      (integration: CloudIntegration) =>
-        wanted.has(integration.identifier) && !integration.disabled
-    );
-    return { replaceToken: apiKey, channels: channels.length };
   }
 
   // The cloud's own "invite link": an authorize URL bound to the cloud
