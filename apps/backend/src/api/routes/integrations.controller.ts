@@ -343,7 +343,9 @@ export class IntegrationsController {
       return this.channelCheckResult(
         integration,
         'failed',
-        `The X health check failed${status ? ` (HTTP ${status})` : ''}. Try again before reconnecting.`,
+        `The X health check failed${
+          status ? ` (HTTP ${status})` : ''
+        }. Try again before reconnecting.`,
         true
       );
     }
@@ -1480,6 +1482,28 @@ export class IntegrationsController {
           getIntegration.internalId,
           getIntegration
         );
+
+        if (
+          body.name === 'pages' &&
+          integrationProvider.sharedUpstreamAccount &&
+          Array.isArray(load)
+        ) {
+          const { pages, hidden } =
+            await this._integrationService.hidePagesClaimedByOtherOrgs(
+              org.id,
+              getIntegration.providerIdentifier,
+              load
+            );
+          if (!pages.length && hidden) {
+            throw new BadRequestException(
+              `The ${hidden} ${integrationProvider.name.replace(
+                /\n/g,
+                ' '
+              )} channel(s) of the shared account are already linked to other workspaces. Use the invite link below or your own account to add yours.`
+            );
+          }
+          return pages;
+        }
 
         return load;
       } catch (err) {

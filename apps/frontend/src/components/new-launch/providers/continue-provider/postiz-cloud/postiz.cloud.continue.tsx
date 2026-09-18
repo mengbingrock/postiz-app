@@ -48,7 +48,9 @@ const InviteLink: FC<{
       }
       setUrl(result.url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create the invite link.');
+      setError(
+        e instanceof Error ? e.message : 'Could not create the invite link.'
+      );
     } finally {
       setLoading(false);
     }
@@ -131,7 +133,11 @@ export const createPostizCloudContinue = (options: {
     transformSaveData: (selection) => selection,
     isSelected: (item, selection) => selection?.id === item.id,
     renderExtra: ({ call, reload }) => (
-      <InviteLink channelLabel={options.channelLabel} call={call} reload={reload} />
+      <InviteLink
+        channelLabel={options.channelLabel}
+        call={call}
+        reload={reload}
+      />
     ),
     renderItem: (item) => (
       <>
@@ -144,7 +150,8 @@ export const createPostizCloudContinue = (options: {
             />
           ) : (
             <div className="w-[80px] h-[80px] bg-input rounded-full flex items-center justify-center text-[24px] font-semibold">
-              {item.name?.slice(0, 1)?.toUpperCase() || options.channelLabel.slice(0, 1)}
+              {item.name?.slice(0, 1)?.toUpperCase() ||
+                options.channelLabel.slice(0, 1)}
             </div>
           )}
         </div>

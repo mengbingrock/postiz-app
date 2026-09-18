@@ -26,10 +26,9 @@ import { timer } from '@gitroom/helpers/utils/timer';
 // cloud at all — and we drive the cloud Public API with the resulting token.
 
 const cloudFrontendUrl = () =>
-  (process.env.POSTIZ_CLOUD_FRONTEND_URL || 'https://platform.postiz.com').replace(
-    /\/$/,
-    ''
-  );
+  (
+    process.env.POSTIZ_CLOUD_FRONTEND_URL || 'https://platform.postiz.com'
+  ).replace(/\/$/, '');
 const cloudBackendUrl = () =>
   (process.env.POSTIZ_CLOUD_BACKEND_URL || 'https://api.postiz.com').replace(
     /\/$/,
@@ -120,7 +119,14 @@ export abstract class PostizCloudProvider
     return !serverToken();
   }
   get oauthCredentialSetup() {
-    return serverToken() ? undefined : postizCloudOAuthCredentialSetup(this.spec);
+    return serverToken()
+      ? undefined
+      : postizCloudOAuthCredentialSetup(this.spec);
+  }
+  // The server-wide token is one cloud org for every workspace here: a cloud
+  // channel one workspace linked must not be offered to the others.
+  get sharedUpstreamAccount() {
+    return !!serverToken();
   }
   isBetweenSteps = true;
   scopes: string[] = [];
@@ -350,7 +356,8 @@ export abstract class PostizCloudProvider
       const message =
         error instanceof Error ? error.message : 'Postiz Cloud did not answer.';
       return {
-        status: error instanceof ChannelSetupError ? 'reconnect_required' : 'failed',
+        status:
+          error instanceof ChannelSetupError ? 'reconnect_required' : 'failed',
         message,
       };
     }
@@ -536,8 +543,12 @@ export abstract class PostizCloudProvider
   ): Promise<PendingCheckResponse> {
     const createdAt = new Date(pendingData.createdAt);
     const params = new URLSearchParams({
-      startDate: formatQueryDate(new Date(createdAt.getTime() - STATUS_WINDOW_MS)),
-      endDate: formatQueryDate(new Date(createdAt.getTime() + STATUS_WINDOW_MS)),
+      startDate: formatQueryDate(
+        new Date(createdAt.getTime() - STATUS_WINDOW_MS)
+      ),
+      endDate: formatQueryDate(
+        new Date(createdAt.getTime() + STATUS_WINDOW_MS)
+      ),
     });
     let posts: CloudPost[] = [];
     try {
@@ -554,7 +565,9 @@ export abstract class PostizCloudProvider
       return { status: 'pending', pendingData };
     }
 
-    const post = posts.find((candidate) => candidate.id === pendingData.cloudPostId);
+    const post = posts.find(
+      (candidate) => candidate.id === pendingData.cloudPostId
+    );
     if (!post) {
       return { status: 'pending', pendingData };
     }
@@ -570,7 +583,8 @@ export abstract class PostizCloudProvider
         this.identifier,
         JSON.stringify(post),
         Buffer.from(JSON.stringify(pendingData)),
-        post.error || `Postiz Cloud could not publish the post to ${this.spec.channelLabel}.`
+        post.error ||
+          `Postiz Cloud could not publish the post to ${this.spec.channelLabel}.`
       );
     }
     return { status: 'pending', pendingData };

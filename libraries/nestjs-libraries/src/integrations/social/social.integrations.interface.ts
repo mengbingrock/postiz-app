@@ -218,6 +218,13 @@ export interface SocialProvider
   isWeb3?: boolean;
   isChromeExtension?: boolean;
   /**
+   * The provider's page list comes from one upstream account shared by every
+   * workspace of this instance (e.g. a server-wide Postiz Cloud token). A page
+   * already linked as a channel in another workspace is then hidden from the
+   * picker so two workspaces cannot publish through the same upstream channel.
+   */
+  sharedUpstreamAccount?: boolean;
+  /**
    * Allows an OAuth provider to accept a user-owned client id and secret.
    * Credentials are sent to the authenticated backend, encrypted while the
    * OAuth flow is pending, and persisted encrypted with the integration.
