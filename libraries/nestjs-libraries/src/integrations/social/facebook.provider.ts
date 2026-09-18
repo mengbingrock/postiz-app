@@ -22,6 +22,7 @@ import {
 import { DribbbleDto } from '@gitroom/nestjs-libraries/dtos/posts/providers-settings/dribbble.dto';
 import { Integration } from '@prisma/client';
 import { hasVideoExtension } from '@gitroom/helpers/utils/has.extension';
+import { readVideoCover } from '@gitroom/nestjs-libraries/upload/video.cover.image';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 
@@ -862,6 +863,27 @@ export class FacebookProvider extends SocialAbstract implements SocialProvider {
     let finalId = '';
     let finalUrl = '';
     if (hasVideoExtension(firstPost?.media?.[0]?.path)) {
+      const cover = firstPost.media[0].thumbnail
+        ? await readVideoCover(firstPost.media[0].thumbnail)
+        : undefined;
+      const videoBody = {
+        file_url: firstPost.media[0].path,
+        description: firstPost.message,
+        published: true,
+      };
+      let uploadBody: BodyInit = JSON.stringify(videoBody);
+      if (cover) {
+        const form = new FormData();
+        form.set('file_url', videoBody.file_url);
+        form.set('description', videoBody.description);
+        form.set('published', 'true');
+        form.set(
+          'thumb',
+          new Blob([new Uint8Array(cover.bytes)], { type: cover.type }),
+          cover.filename
+        );
+        uploadBody = form;
+      }
       const {
         id: videoId,
         permalink_url,
@@ -873,14 +895,8 @@ export class FacebookProvider extends SocialAbstract implements SocialProvider {
           )}?access_token=${accessToken}&fields=id,permalink_url`,
           {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              file_url: firstPost?.media?.[0]?.path!,
-              description: firstPost.message,
-              published: true,
-            }),
+            headers: cover ? {} : { 'Content-Type': 'application/json' },
+            body: uploadBody,
           },
           'upload mp4'
         )

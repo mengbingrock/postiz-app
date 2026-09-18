@@ -20,6 +20,7 @@ import {
 import { ChineseInLAProvider } from '@gitroom/nestjs-libraries/integrations/social/chineseinla.provider';
 import { RedNoteProvider } from '@gitroom/nestjs-libraries/integrations/social/rednote.provider';
 import { socialIntegrationList } from '@gitroom/nestjs-libraries/integrations/integration.manager';
+import { prepareVideoCovers } from './video.cover';
 
 const validUrlExtension = new ValidUrlExtension();
 const validUrlPath = new ValidUrlPath();
@@ -34,6 +35,29 @@ const attachmentUrl = z
   .refine((url) => validUrlExtension.validate(url, {} as any), {
     message: validUrlExtension.defaultMessage({} as any),
   });
+
+const coverAttachment = z
+  .object({
+    path: attachmentUrl,
+    thumbnail: attachmentUrl
+      .refine(
+        (url) =>
+          /^https:\/\//i.test(url) &&
+          /\.(png|jpe?g)$/i.test(url.split(/[?#]/)[0]),
+        'Upload a JPEG/PNG cover to Postiz and use its HTTPS URL.'
+      )
+      .optional(),
+    thumbnailTimestamp: z
+      .number()
+      .int()
+      .min(0)
+      .max(2147483647)
+      .optional()
+      .describe(
+        'Video frame offset in milliseconds; do not combine with thumbnail.'
+      ),
+  })
+  .strict();
 
 @Injectable()
 export class IntegrationSchedulePostTool implements AgentToolInterface {
@@ -69,6 +93,7 @@ A single LinkedIn post with one comment
 - postsAndComments array length will be one
 
 Do not use this to update or delete existing posts.
+For a custom video cover, upload the video and JPEG/PNG separately, then use ONE attachment object {path: videoUrl, thumbnail: coverUrl}, not two attachments. Legacy string URLs still work. For supported frame selection use {path: videoUrl, thumbnailTimestamp: milliseconds}. Unsupported platform/post combinations return errors before creation; never silently omit a requested cover. YouTube also accepts settings.thumbnail. A successful publish is not proof the platform displays the cover: verify the published result separately.
 If validation fails, the result contains output.errors describing what to fix; the call can be retried with corrected parameters.
 For an immediate ChineseInLA post, call integrationSchema for platform "chineseinla", then call the advertised preparePostForReview provider helper through triggerTool. Review its PNG preview and obtain a separate explicit user confirmation. Then call this tool once with the identical payload and include preparedDraftId in settings. Never create a ChineseInLA "now" post without that preparation step.
 `,
@@ -104,8 +129,10 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
                         "The content of the post, HTML, Each line must be wrapped in <p> here is the possible tags: h1, h2, h3, u, strong, li, ul, p (you can't have u and strong together)"
                       ),
                     attachments: z
-                      .array(attachmentUrl)
-                      .describe('The image of the post (URLS)'),
+                      .array(z.union([attachmentUrl, coverAttachment]))
+                      .describe(
+                        'Uploaded media URLs or video objects with an explicit cover image or frame timestamp'
+                      ),
                   })
                 )
                 .describe(
@@ -149,6 +176,7 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
         const finalOutput = [];
 
         const integrations = {} as Record<string, Integration>;
+        const prepared = new Map<any, ReturnType<typeof prepareVideoCovers>>();
         for (const platform of inputData.socialPost) {
           integrations[platform.integrationId] =
             await this._integrationService.getIntegrationById(
@@ -165,6 +193,19 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
             }),
             {} as AllProvidersSettings
           );
+
+          try {
+            prepared.set(
+              platform,
+              prepareVideoCovers(
+                integrations[platform.integrationId]?.providerIdentifier,
+                platform.postsAndComments,
+                settings
+              )
+            );
+          } catch (error) {
+            return { output: { errors: (error as Error).message } };
+          }
 
           if (
             integrations[platform.integrationId]?.providerIdentifier ===
@@ -196,13 +237,8 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
             [
               {
                 integration: { id: platform.integrationId },
-                settings,
-                value: platform.postsAndComments.map((p: any) => ({
-                  content: p.content,
-                  image: (p.attachments || []).map((path: string) => ({
-                    path,
-                  })),
-                })),
+                settings: prepared.get(platform)!.settings,
+                value: prepared.get(platform)!.value,
               },
             ]
           );
@@ -325,36 +361,35 @@ For an immediate ChineseInLA post, call integrationSchema for platform "chinesei
             await redNoteProvider.configureEgress(integration.token, proxyUrl);
           }
 
-          const output = await this._postsService.createPost(organizationId, {
-            date: post.date,
-            type: post.type as 'draft' | 'schedule' | 'now',
-            shortLink: post.shortLink,
-            tags: [],
-            posts: [
-              {
-                integration,
-                group: makeId(10),
-                settings: post.settings.reduce(
-                  (acc: AllProvidersSettings, s: { key: string; value: any }) => ({
-                    ...acc,
-                    [s.key]: s.value,
-                  }),
-                  {
+          const output = await this._postsService.createPost(
+            organizationId,
+            {
+              date: post.date,
+              type: post.type as 'draft' | 'schedule' | 'now',
+              shortLink: post.shortLink,
+              tags: [],
+              posts: [
+                {
+                  integration,
+                  group: makeId(10),
+                  settings: {
+                    ...prepared.get(post)!.settings,
                     __type: integration.providerIdentifier,
-                  } as AllProvidersSettings
-                ),
-                value: post.postsAndComments.map((p: any) => ({
-                  content: p.content,
-                  id: makeId(10),
-                  delay: 0,
-                  image: p.attachments.map((p: any) => ({
+                  } as AllProvidersSettings,
+                  value: prepared.get(post)!.value.map((p) => ({
+                    content: p.content,
                     id: makeId(10),
-                    path: p,
+                    delay: 0,
+                    image: p.image.map((media) => ({
+                      id: makeId(10),
+                      ...media,
+                    })),
                   })),
-                })),
-              },
-            ],
-          }, 'MCP');
+                },
+              ],
+            },
+            'MCP'
+          );
           finalOutput.push(...output);
         }
 

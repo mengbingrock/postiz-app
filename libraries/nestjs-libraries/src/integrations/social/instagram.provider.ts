@@ -749,8 +749,10 @@ export class InstagramProvider
           ? firstPost?.media?.length === 1
             ? isStory
               ? `video_url=${m.path}&media_type=STORIES`
-              : `video_url=${m.path}&media_type=REELS&thumb_offset=${
-                  m?.thumbnailTimestamp || 0
+              : `video_url=${m.path}&media_type=REELS&${
+                  m.thumbnail
+                    ? `cover_url=${encodeURIComponent(m.thumbnail)}`
+                    : `thumb_offset=${m.thumbnailTimestamp ?? 0}`
                 }`
             : isStory
             ? `video_url=${m.path}&media_type=STORIES`

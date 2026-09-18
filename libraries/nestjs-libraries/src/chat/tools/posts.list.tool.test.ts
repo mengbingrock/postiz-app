@@ -35,3 +35,15 @@ test('postListItem returns null when a post has no publication error', () => {
 
   assert.equal(item.error, null);
 });
+
+test('postListItem exposes stored video cover and zero frame offset', () => {
+  const media = [
+    { path: 'https://uploads.example/v.mp4', thumbnailTimestamp: 0 },
+  ];
+  assert.equal(
+    postListItem({ ...post, image: JSON.stringify(media) }).media[0]
+      .thumbnailTimestamp,
+    0
+  );
+  assert.deepEqual(postListItem({ ...post, image: 'broken' }).media, []);
+});
