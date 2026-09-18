@@ -356,6 +356,18 @@ export class NoAuthIntegrationsController {
           // @ts-ignore - dynamic method call
           pages = await integrationProvider[fetchMethod](accessToken);
         }
+        if (integrationProvider.sharedUpstreamAccount && Array.isArray(pages)) {
+          // Same rule as the function route: a page another workspace
+          // already publishes through is not offered here. An empty result
+          // makes the dialog refetch and show the reason.
+          pages = (
+            await this._integrationService.hidePagesClaimedByOtherOrgs(
+              org.id,
+              integration,
+              pages
+            )
+          ).pages;
+        }
       } catch (err) {
         console.log('Failed to fetch pages:', err);
       }
