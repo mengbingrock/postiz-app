@@ -47,9 +47,12 @@ test('Google Business via Postiz Cloud is registered as gmb-cloud', () => {
 test('Google Business via Postiz Cloud lists only gmb channels and mints a gmb invite link', async () => {
   await withFetch(
     ({ url }) => {
-      if (url.endsWith('/public/v1/integrations')) return { body: cloudIntegrations };
+      if (url.endsWith('/public/v1/integrations'))
+        return { body: cloudIntegrations };
       if (url.endsWith('/public/v1/social/gmb')) {
-        return { body: { url: 'https://accounts.google.com/o/oauth2/v2/auth?state=x' } };
+        return {
+          body: { url: 'https://accounts.google.com/o/oauth2/v2/auth?state=x' },
+        };
       }
       throw new Error(`Unexpected fetch: ${url}`);
     },
@@ -70,7 +73,11 @@ test('Google Business via Postiz Cloud lists only gmb channels and mints a gmb i
 
 test('Google Business via Postiz Cloud explains when the cloud has no location', async () => {
   await withFetch(
-    () => ({ body: [{ id: 'cloud-tt-1', name: 'truegritai', identifier: 'tiktok-business' }] }),
+    () => ({
+      body: [
+        { id: 'cloud-tt-1', name: 'truegritai', identifier: 'tiktok-business' },
+      ],
+    }),
     async () => {
       await assert.rejects(
         new GmbCloudProvider().pages('pos_token'),
@@ -85,14 +92,17 @@ test('Google Business via Postiz Cloud explains when the cloud has no location',
 test('Google Business via Postiz Cloud posts text-only updates with gmb settings', async () => {
   await withFetch(
     ({ url, init }) => {
-      if (url.endsWith('/public/v1/integrations')) return { body: cloudIntegrations };
+      if (url.endsWith('/public/v1/integrations'))
+        return { body: cloudIntegrations };
       if (url.endsWith('/public/v1/posts')) {
         const body = JSON.parse(String(init?.body));
         assert.deepEqual(body.posts[0].integration, { id: 'cloud-gmb-1' });
         assert.deepEqual(body.posts[0].value[0].image, []);
         assert.equal(body.posts[0].settings.__type, 'gmb');
         assert.equal(body.posts[0].settings.topicType, 'STANDARD');
-        return { body: [{ postId: 'cloud-post-1', integration: 'cloud-gmb-1' }] };
+        return {
+          body: [{ postId: 'cloud-post-1', integration: 'cloud-gmb-1' }],
+        };
       }
       throw new Error(`Unexpected fetch: ${url}`);
     },
@@ -112,6 +122,63 @@ test('Google Business via Postiz Cloud posts text-only updates with gmb settings
       );
       assert.equal(result.status, 'pending');
       assert.equal(result.postId, 'cloud-post-1');
+    }
+  );
+});
+
+test('Google Business via Postiz Cloud hides linked cloud channels from other workspaces only with the server token', () => {
+  const previous = process.env.POSTIZ_CLOUD_TOKEN;
+  try {
+    process.env.POSTIZ_CLOUD_TOKEN = 'server-key';
+    assert.equal(new GmbCloudProvider().sharedUpstreamAccount, true);
+    delete process.env.POSTIZ_CLOUD_TOKEN;
+    assert.equal(new GmbCloudProvider().sharedUpstreamAccount, false);
+  } finally {
+    if (previous === undefined) delete process.env.POSTIZ_CLOUD_TOKEN;
+    else process.env.POSTIZ_CLOUD_TOKEN = previous;
+  }
+});
+
+test('Google Business via Postiz Cloud switches the channel to the user’s own cloud API key', async () => {
+  await withFetch(
+    ({ url, init }) => {
+      assert.equal(url, 'https://api.postiz.com/public/v1/integrations');
+      assert.equal(
+        (init?.headers as any)?.Authorization,
+        'own-account-key-1234567890'
+      );
+      return { body: cloudIntegrations };
+    },
+    async () => {
+      const provider = new GmbCloudProvider();
+      const result = await provider.useOwnCloud('postiz-cloud:server-token', {
+        apiKey: ' own-account-key-1234567890 ',
+      });
+      assert.deepEqual(result, {
+        replaceToken: 'own-account-key-1234567890',
+        channels: 1,
+      });
+    }
+  );
+});
+
+test('Google Business via Postiz Cloud rejects a bad or unknown cloud API key', async () => {
+  const provider = new GmbCloudProvider();
+  await assert.rejects(
+    () => provider.useOwnCloud('x', { apiKey: 'short' }),
+    (error: Error) =>
+      error instanceof ChannelSetupError &&
+      /Paste the API key/.test(error.message)
+  );
+  await withFetch(
+    () => ({ status: 401, body: { message: 'Unauthorized' } }),
+    async () => {
+      await assert.rejects(
+        () => provider.useOwnCloud('x', { apiKey: 'wrong-key-wrong-key-123' }),
+        (error: Error) =>
+          error instanceof ChannelSetupError &&
+          /rejected this API key/.test(error.message)
+      );
     }
   );
 });

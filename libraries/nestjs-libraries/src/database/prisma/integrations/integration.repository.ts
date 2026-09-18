@@ -460,6 +460,45 @@ export class IntegrationRepository {
     });
   }
 
+  // Swap the credentials an in-between channel carries (see
+  // ProviderFunctionTokenReplacement). Scoped to the org so a foreign id is a
+  // no-op.
+  replaceIntegrationToken(org: string, id: string, token: string) {
+    return this._integration.model.integration.updateMany({
+      where: {
+        organizationId: org,
+        id,
+      },
+      data: {
+        token,
+        refreshToken: token,
+        refreshNeeded: false,
+      },
+    });
+  }
+
+  // Which of these upstream ids are already a live channel of this provider
+  // in some other organization.
+  async getInternalIdsClaimedByOtherOrgs(
+    org: string,
+    providerIdentifier: string,
+    internalIds: string[]
+  ) {
+    if (!internalIds.length) {
+      return [];
+    }
+    const claimed = await this._integration.model.integration.findMany({
+      where: {
+        providerIdentifier,
+        internalId: { in: internalIds },
+        organizationId: { not: org },
+        deletedAt: null,
+      },
+      select: { internalId: true },
+    });
+    return claimed.map((c) => c.internalId);
+  }
+
   async getIntegrationForOrder(
     id: string,
     order: string,

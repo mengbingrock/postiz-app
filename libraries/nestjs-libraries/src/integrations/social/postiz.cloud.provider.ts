@@ -6,6 +6,7 @@ import {
   PendingCheckResponse,
   PostDetails,
   PostResponse,
+  ProviderFunctionTokenReplacement,
   SocialProvider,
 } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import {
@@ -26,10 +27,9 @@ import { timer } from '@gitroom/helpers/utils/timer';
 // cloud at all — and we drive the cloud Public API with the resulting token.
 
 const cloudFrontendUrl = () =>
-  (process.env.POSTIZ_CLOUD_FRONTEND_URL || 'https://platform.postiz.com').replace(
-    /\/$/,
-    ''
-  );
+  (
+    process.env.POSTIZ_CLOUD_FRONTEND_URL || 'https://platform.postiz.com'
+  ).replace(/\/$/, '');
 const cloudBackendUrl = () =>
   (process.env.POSTIZ_CLOUD_BACKEND_URL || 'https://api.postiz.com').replace(
     /\/$/,
@@ -120,7 +120,14 @@ export abstract class PostizCloudProvider
     return !serverToken();
   }
   get oauthCredentialSetup() {
-    return serverToken() ? undefined : postizCloudOAuthCredentialSetup(this.spec);
+    return serverToken()
+      ? undefined
+      : postizCloudOAuthCredentialSetup(this.spec);
+  }
+  // The server-wide token is one cloud org for every workspace here: a cloud
+  // channel one workspace linked must not be offered to the others.
+  get sharedUpstreamAccount() {
+    return !!serverToken();
   }
   isBetweenSteps = true;
   scopes: string[] = [];
@@ -282,6 +289,47 @@ export abstract class PostizCloudProvider
     }));
   }
 
+  // "Use my own Postiz Cloud account": the user pastes the API key of their
+  // own cloud account (Settings → Developers → Access). The key is checked
+  // against the cloud, then stored on this channel in place of the
+  // server-wide token, so the picker - and everything after it - works
+  // against the user's own cloud org, where they connected the platform
+  // themselves.
+  async useOwnCloud(
+    _accessToken: string,
+    data: { apiKey?: string }
+  ): Promise<ProviderFunctionTokenReplacement> {
+    const apiKey = String(data?.apiKey || '').trim();
+    if (!/^[A-Za-z0-9_\-.]{16,256}$/.test(apiKey)) {
+      throw new ChannelSetupError(
+        'Paste the API key of your Postiz Cloud account (platform.postiz.com → Settings → Developers → Access).'
+      );
+    }
+    const response = await fetch(
+      `${cloudBackendUrl()}/public/v1/integrations`,
+      {
+        headers: { 'Content-Type': 'application/json', Authorization: apiKey },
+      }
+    );
+    if (response.status === 401 || response.status === 403) {
+      throw new ChannelSetupError(
+        'Postiz Cloud rejected this API key. Copy it again from platform.postiz.com → Settings → Developers → Access.'
+      );
+    }
+    if (!response.ok) {
+      throw new ChannelSetupError(
+        `Postiz Cloud answered HTTP ${response.status} while checking the API key. Try again in a moment.`
+      );
+    }
+    const list = await response.json();
+    const wanted = new Set(this.spec.cloudIdentifiers);
+    const channels = (Array.isArray(list) ? list : []).filter(
+      (integration: CloudIntegration) =>
+        wanted.has(integration.identifier) && !integration.disabled
+    );
+    return { replaceToken: apiKey, channels: channels.length };
+  }
+
   // The cloud's own "invite link": an authorize URL bound to the cloud
   // organization (valid one hour). Whoever opens it connects their account
   // into the cloud org without a Postiz Cloud account; the channel then
@@ -350,7 +398,8 @@ export abstract class PostizCloudProvider
       const message =
         error instanceof Error ? error.message : 'Postiz Cloud did not answer.';
       return {
-        status: error instanceof ChannelSetupError ? 'reconnect_required' : 'failed',
+        status:
+          error instanceof ChannelSetupError ? 'reconnect_required' : 'failed',
         message,
       };
     }
@@ -536,8 +585,12 @@ export abstract class PostizCloudProvider
   ): Promise<PendingCheckResponse> {
     const createdAt = new Date(pendingData.createdAt);
     const params = new URLSearchParams({
-      startDate: formatQueryDate(new Date(createdAt.getTime() - STATUS_WINDOW_MS)),
-      endDate: formatQueryDate(new Date(createdAt.getTime() + STATUS_WINDOW_MS)),
+      startDate: formatQueryDate(
+        new Date(createdAt.getTime() - STATUS_WINDOW_MS)
+      ),
+      endDate: formatQueryDate(
+        new Date(createdAt.getTime() + STATUS_WINDOW_MS)
+      ),
     });
     let posts: CloudPost[] = [];
     try {
@@ -554,7 +607,9 @@ export abstract class PostizCloudProvider
       return { status: 'pending', pendingData };
     }
 
-    const post = posts.find((candidate) => candidate.id === pendingData.cloudPostId);
+    const post = posts.find(
+      (candidate) => candidate.id === pendingData.cloudPostId
+    );
     if (!post) {
       return { status: 'pending', pendingData };
     }
@@ -570,7 +625,8 @@ export abstract class PostizCloudProvider
         this.identifier,
         JSON.stringify(post),
         Buffer.from(JSON.stringify(pendingData)),
-        post.error || `Postiz Cloud could not publish the post to ${this.spec.channelLabel}.`
+        post.error ||
+          `Postiz Cloud could not publish the post to ${this.spec.channelLabel}.`
       );
     }
     return { status: 'pending', pendingData };

@@ -180,6 +180,29 @@ export class IntegrationService {
     );
   }
 
+  replaceToken(org: string, id: string, token: string) {
+    return this._integrationRepository.replaceIntegrationToken(org, id, token);
+  }
+
+  // For providers whose page list comes from an upstream account shared by
+  // every workspace (SocialProvider.sharedUpstreamAccount): drop the pages
+  // another workspace already publishes through.
+  async hidePagesClaimedByOtherOrgs<T extends { id: string }>(
+    org: string,
+    providerIdentifier: string,
+    pages: T[]
+  ): Promise<{ pages: T[]; hidden: number }> {
+    const claimed = new Set(
+      await this._integrationRepository.getInternalIdsClaimedByOtherOrgs(
+        org,
+        providerIdentifier,
+        pages.map((p) => String(p.id))
+      )
+    );
+    const visible = pages.filter((p) => !claimed.has(String(p.id)));
+    return { pages: visible, hidden: pages.length - visible.length };
+  }
+
   async refreshToken(
     provider: SocialProvider,
     refresh: string,
@@ -215,10 +238,11 @@ export class IntegrationService {
     newProvider: string,
     auth: { id: string; username: string }
   ) {
-    const existing = await this._integrationRepository.getIntegrationByInternalId(
-      org,
-      oldInternalId
-    );
+    const existing =
+      await this._integrationRepository.getIntegrationByInternalId(
+        org,
+        oldInternalId
+      );
 
     if (
       !existing ||
