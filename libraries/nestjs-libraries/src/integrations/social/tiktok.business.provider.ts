@@ -581,7 +581,7 @@ export class TiktokBusinessProvider
       video_url: firstPost?.media?.[0]?.path!,
       ...(firstPost?.media?.[0]?.thumbnail
         ? { custom_thumbnail_url: firstPost?.media?.[0]?.thumbnail }
-        : firstPost?.media?.[0]?.thumbnailTimestamp
+        : firstPost?.media?.[0]?.thumbnailTimestamp !== undefined
         ? { thumbnail_offset: firstPost?.media?.[0]?.thumbnailTimestamp }
         : {}),
       post_info: {

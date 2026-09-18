@@ -18,6 +18,21 @@ const parseSettings = (settings: string | null) => {
   }
 };
 
+const parseMedia = (image: string | null) => {
+  try {
+    const value = JSON.parse(image || '[]');
+    return Array.isArray(value)
+      ? value.map(({ path, thumbnail, thumbnailTimestamp }) => ({
+          path,
+          thumbnail,
+          thumbnailTimestamp,
+        }))
+      : [];
+  } catch {
+    return [];
+  }
+};
+
 export const postListItem = (post: any) => ({
   id: post.id,
   publishDate: dayjs(post.publishDate).utc().format('YYYY-MM-DDTHH:mm:ss'),
@@ -25,6 +40,7 @@ export const postListItem = (post: any) => ({
   error: postErrorMessage(post.error),
   content: post.content || '',
   settings: parseSettings(post.settings),
+  media: parseMedia(post.image),
   group: post.group,
   integrationId: post.integration?.id,
   platform: post.integration?.providerIdentifier,
@@ -82,6 +98,17 @@ Posts cannot be deleted through the Postiz tools - if the user wants to delete a
                 .describe('Publication failure message for ERROR posts'),
               content: z.string(),
               settings: z.any().describe('The post current provider settings'),
+              media: z
+                .array(
+                  z.object({
+                    path: z.string(),
+                    thumbnail: z.string().optional(),
+                    thumbnailTimestamp: z.number().optional(),
+                  })
+                )
+                .describe(
+                  'Saved attachment/cover metadata, not proof of the platform display'
+                ),
               group: z.string(),
               integrationId: z.string(),
               platform: z.string(),

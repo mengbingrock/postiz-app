@@ -574,6 +574,11 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
           ...(isPhoto ? { description: firstPost.message } : {}),
           privacy_level:
             firstPost.settings.privacy_level || 'PUBLIC_TO_EVERYONE',
+          ...(!isPhoto && firstPost.media?.[0]?.thumbnailTimestamp !== undefined
+            ? {
+                video_cover_timestamp_ms: firstPost.media[0].thumbnailTimestamp,
+              }
+            : {}),
           ...(isPhoto
             ? {}
             : { disable_duet: !this.assetBoolean(firstPost.settings.duet) }),

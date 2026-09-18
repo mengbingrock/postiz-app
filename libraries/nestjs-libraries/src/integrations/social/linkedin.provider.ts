@@ -29,6 +29,7 @@ import imageToPDF from 'image-to-pdf';
 import { Readable } from 'stream';
 import { Rules } from '@gitroom/nestjs-libraries/chat/rules.description.decorator';
 import { resolveOAuthCredentials } from '@gitroom/nestjs-libraries/integrations/social/oauth.credential.setup';
+import { readVideoCover } from '@gitroom/nestjs-libraries/upload/video.cover.image';
 
 export const linkedinOAuthCredentialSetup: OAuthCredentialSetup = {
   clientIdEnv: ['LINKEDIN_CLIENT_ID'],
@@ -332,7 +333,8 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
     // descriptor for videos, which are streamed chunk-by-chunk from the source
     // instead of being held in memory.
     picture: Buffer | { path: string },
-    type = 'personal' as 'company' | 'personal'
+    type = 'personal' as 'company' | 'personal',
+    thumbnail?: string
   ): Promise<{
     id: string;
     poll?: { urn: string; endpoint: 'videos' | 'images' | 'documents' };
@@ -340,6 +342,8 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
   }> {
     // Determine the appropriate endpoint based on file type
     const isVideo = hasVideoExtension(fileName);
+    const cover =
+      isVideo && thumbnail ? await readVideoCover(thumbnail) : undefined;
     const isPdf = hasExtension(fileName, 'pdf');
 
     const fileSizeBytes = Buffer.isBuffer(picture)
@@ -378,7 +382,7 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
                 ? {
                     fileSizeBytes,
                     uploadCaptions: false,
-                    uploadThumbnail: false,
+                    uploadThumbnail: !!cover,
                   }
                 : {}),
             },
@@ -389,6 +393,27 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
 
     const sendUrlRequest = uploadInstructions?.[0]?.uploadUrl || uploadUrl;
     const finalOutput = video || image || document;
+
+    if (cover) {
+      if (!all.thumbnailUploadUrl)
+        throw new Error(
+          'LinkedIn did not provide a thumbnail upload URL; video post not published.'
+        );
+      await this.fetch(
+        all.thumbnailUploadUrl,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'media-type-family': 'STILLIMAGE',
+          },
+          body: cover.bytes,
+        },
+        this.identifier,
+        0,
+        true
+      );
+    }
 
     const etags = [];
     if (isVideo) {
@@ -663,7 +688,8 @@ export class LinkedinProvider extends SocialAbstract implements SocialProvider {
           accessToken,
           personId,
           mediaBuffer,
-          type
+          type,
+          media.thumbnail
         );
 
         if (!uploaded?.id) {

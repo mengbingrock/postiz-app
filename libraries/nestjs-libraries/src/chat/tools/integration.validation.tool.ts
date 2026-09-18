@@ -8,6 +8,7 @@ import {
 } from '@gitroom/nestjs-libraries/integrations/integration.manager';
 import { getValidationSchemas } from '@gitroom/nestjs-libraries/chat/validation.schemas.helper';
 import { checkAuth } from '@gitroom/nestjs-libraries/chat/auth.context';
+import { videoCoverRules } from './video.cover';
 
 @Injectable()
 export class IntegrationValidationTool implements AgentToolInterface {
@@ -102,7 +103,9 @@ export class IntegrationValidationTool implements AgentToolInterface {
 
         return {
           output: {
-            rules: rules[integration.identifier],
+            rules: `${rules[integration.identifier] || ''}\n${videoCoverRules(
+              integration.identifier
+            )}`,
             maxLength,
             settings: !schemas ? 'No additional settings required' : schemas,
             tools: tools[integration.identifier],
