@@ -1,8 +1,12 @@
 import { IUploadProvider } from './upload.interface';
-import { mkdirSync, unlink, writeFileSync } from 'fs';
+import { mkdirSync, readFileSync, unlink, writeFileSync } from 'fs';
 import { isSafePublicHttpsUrl } from '@gitroom/nestjs-libraries/dtos/webhooks/webhook.url.validator';
 import { ssrfSafeDispatcher } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
 import { parseDataUrl } from '@gitroom/nestjs-libraries/upload/data.url';
+import {
+  isLocalUploadPath,
+  resolveLocalUploadPath,
+} from '@gitroom/nestjs-libraries/upload/local.upload.path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { fileTypeFromBuffer } = require('file-type');
 
@@ -28,9 +32,15 @@ export class LocalStorage implements IUploadProvider {
   async uploadSimple(path: string) {
     const dataUrl = path.startsWith('data:') ? parseDataUrl(path) : null;
 
+    const local = dataUrl ? path : resolveLocalUploadPath(path);
     let body: Buffer;
     if (dataUrl) {
       body = dataUrl.buffer;
+    } else if (isLocalUploadPath(path, local)) {
+      // Re-uploading something this instance already serves (e.g. a channel
+      // picture during a token refresh): read it from disk instead of
+      // fetching our own hostname, which may resolve to a private address.
+      body = readFileSync(local);
     } else {
       if (!(await isSafePublicHttpsUrl(path))) {
         throw new Error('Unsafe URL');
