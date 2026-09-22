@@ -178,6 +178,7 @@ export class IntegrationManager {
                       documentationUrl: oauthCredentialSetup.documentationUrl,
                       help: oauthCredentialSetup.help,
                       callbackPath: oauthCredentialSetup.callbackPath,
+                      assistantPrompt: oauthCredentialSetup.assistantPrompt,
                       scopes: p.scopes,
                       missing:
                         missingOAuthCredentialNames(oauthCredentialSetup),

@@ -162,3 +162,12 @@ test('Instagram Standalone returns the professional account on success', async (
     }
   );
 });
+
+test('Instagram Standalone ships an assistant prompt with the callback placeholder', () => {
+  const provider = new InstagramStandaloneProvider();
+  const prompt = provider.oauthCredentialSetup.assistantPrompt || '';
+  assert.match(prompt, /\{\{callbackUrl\}\}/);
+  assert.match(prompt, /Instagram app ID/);
+  assert.match(prompt, /instagram_business_content_publish/);
+  assert.doesNotMatch(prompt, /https:\/\/post\.truegrit\.dev/);
+});

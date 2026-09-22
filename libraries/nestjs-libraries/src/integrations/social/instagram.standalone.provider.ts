@@ -36,6 +36,56 @@ const instagramOAuthCredentialSetup: OAuthCredentialSetup = {
     'While the app is unpublished, add the Instagram account under "Generate access tokens" (Add account) and accept the tester invite in the Instagram app (Settings → Website permissions → Apps and websites).',
     'The Instagram account must be a Business or Creator account. It does not need a Facebook Page.',
   ],
+  assistantPrompt: `Set up Instagram (Standalone) for my Postiz instance by creating a dedicated Meta app. Use my browser, where I am already signed in to Meta for Developers and Instagram. Never type my password or the app secret; whenever one of those is needed, stop and tell me exactly which field to fill myself.
+
+Values:
+- Postiz callback URL: {{callbackUrl}}
+- Instagram account to connect: @IG_USERNAME (must be a Business or Creator account)
+- Meta business portfolio to attach: BUSINESS_NAME (may be "none" for now)
+
+Steps, in order. Confirm each with a screenshot before moving on.
+
+1. Create the app at https://developers.facebook.com/apps/creation/
+   - App name: pick a name WITHOUT the words instagram, insta, ig, gram, facebook, fb or meta. Meta rejects them. Something like "<company>-creator" works.
+   - Contact email: keep the default or use my company address.
+   - Use cases: filter "Content management" and tick "Manage messaging & content on Instagram" only.
+   - Business: choose BUSINESS_NAME (or "I don't want to connect a business portfolio yet").
+   - Requirements: none expected. Click Create app.
+   - Meta will ask me to re-enter my password. Stop and let me do it, then continue.
+   - Note the Meta App ID from the dashboard URL. I will NOT use it in Postiz.
+
+2. Open Use cases -> Manage messaging & content on Instagram -> Customize -> "API setup with Instagram login".
+   - Record the "Instagram app ID" shown there. This is the ID Postiz needs, not the Meta App ID.
+   - Do not click Show on the secret; I will copy it myself later.
+
+3. On the same page, step "Set up Instagram business login": click Set up, enter this redirect URL exactly, and Save:
+   {{callbackUrl}}
+   The step should turn green.
+
+4. Open "Permissions and features" for the use case and click Add on each of:
+   instagram_business_basic, instagram_business_content_publish,
+   instagram_business_manage_comments, instagram_business_manage_insights
+   All four must read "Ready for testing".
+
+5. Back on "API setup with Instagram login", step "Generate access tokens": click Add account -> Continue,
+   choose the role "Instagram Tester", type IG_USERNAME, pick it from the dropdown, click Add.
+   - Use this Add account flow, not App roles -> Roles; the Roles page sometimes fails with "Form can't be saved".
+   - If a password-manager popup blocks the username field, stop and ask me to type the username.
+   - Then tell me to accept the invite in the Instagram app as IG_USERNAME:
+     Settings -> Website permissions -> Apps and websites -> Tester invites.
+
+6. In Postiz: Add Channel -> Instagram (Standalone). Fill "Instagram App ID" with the ID from step 2.
+   Stop and ask me to paste the Instagram App Secret (from the step-2 page, click Show) and to click
+   "Continue to Instagram (Standalone)". On Instagram's consent screen I sign in as IG_USERNAME and click Allow.
+
+7. Verify: the channel appears in the Postiz calendar, and "Check all channels" or a test post works.
+   Report the Meta App ID, the Instagram app ID, the redirect URL, the permissions state and the tester state.
+
+Known errors and what they mean:
+- "Invalid platform app" on the Instagram login page: the Meta App ID was used instead of the Instagram app ID.
+- "Insufficient developer role": the signed-in Instagram account is not an accepted tester of this unpublished app.
+- "Invalid redirect_uri": step 3 was skipped or the URL differs from the Postiz callback.
+The app can stay unpublished; only tester accounts can connect to it, which is fine for our own accounts.`,
 };
 
 const instagramProvider = new InstagramProvider();

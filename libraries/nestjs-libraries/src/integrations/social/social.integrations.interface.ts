@@ -17,6 +17,12 @@ export type OAuthCredentialSetup = {
   help: string[];
   /** Override the default /integrations/social/:identifier callback path. */
   callbackPath?: string;
+  /**
+   * A ready-to-paste prompt for an AI assistant with browser access that
+   * walks through creating the developer app. `{{callbackUrl}}` is replaced
+   * with this instance's callback URL when shown.
+   */
+  assistantPrompt?: string;
 };
 export interface IAuthenticator {
   authenticate(
