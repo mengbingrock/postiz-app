@@ -218,7 +218,7 @@ export const OAuthCredentialsSetup: FC<{
               readOnly
               value={assistantPrompt}
               onFocus={(event) => event.currentTarget.select()}
-              className="mt-[10px] h-[260px] w-full resize-y rounded-[6px] border border-newTableBorder bg-tableBorder/40 p-[10px] font-mono text-[12px] leading-[18px] text-textColor outline-none"
+              className="mt-[10px] h-[260px] w-full resize-y rounded-[6px] border border-newTableBorder bg-newBgColorInner p-[10px] font-mono text-[12px] leading-[18px] text-textColor outline-none"
             />
           )}
         </div>
