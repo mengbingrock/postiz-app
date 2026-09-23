@@ -20,6 +20,8 @@ const imagePlatforms = new Set([
   'tiktok-business',
   'pinterest',
   'reddit',
+  // The creator page's 编辑封面 → 上传封面 control takes a JPEG/PNG.
+  'rednote',
 ]);
 const framePlatforms = new Set([
   'instagram',

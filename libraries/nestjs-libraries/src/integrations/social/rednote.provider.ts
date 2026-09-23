@@ -1367,7 +1367,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     );
   }
 
-  private async materializeVideo(value: string, directory: string) {
+  private async materializeMedia(value: string, directory: string) {
     const outputPath = join(
       directory,
       basename(new URL(value, 'file:///').pathname)
@@ -1378,7 +1378,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       const response = await fetch(source);
       if (!response.ok) {
         throw new Error(
-          `Unable to download RedNote video: HTTP ${response.status}`
+          `Unable to download RedNote media: HTTP ${response.status}`
         );
       }
       await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
@@ -1429,7 +1429,13 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
     if (video) {
       const directory = await mkdtemp(join(tmpdir(), 'postiz-rednote-'));
       try {
-        const videoPath = await this.materializeVideo(video.path, directory);
+        const videoPath = await this.materializeMedia(video.path, directory);
+        // A custom cover travels as the video's thumbnail. The MCP applies it
+        // through the creator page's 编辑封面 control and fails the publish if
+        // it cannot, so a requested cover is never silently dropped.
+        const coverPath = video.thumbnail
+          ? await this.materializeMedia(video.thumbnail, directory)
+          : '';
         output = await this.callMcpTool(
           credentials,
           'publish_with_video',
@@ -1437,6 +1443,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
             title,
             content,
             video: videoPath,
+            ...(coverPath ? { cover: coverPath } : {}),
             tags,
             visibility: settings.visibility || '公开可见',
           },
