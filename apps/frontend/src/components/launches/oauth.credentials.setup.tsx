@@ -18,6 +18,7 @@ export type OAuthCredentialSetupView = {
   scopes: string[];
   missing: string[];
   callbackPath?: string;
+  assistantPrompt?: string;
 };
 
 const schema = object({
@@ -49,6 +50,14 @@ export const OAuthCredentialsSetup: FC<{
   }`;
   const serverCredentialsMissing = setup.missing.length > 0;
   const scopeText = useMemo(() => setup.scopes.join(', '), [setup.scopes]);
+  // The provider's prompt for an AI assistant, with this instance's callback
+  // URL filled in so it can be pasted as-is.
+  const assistantPrompt = useMemo(
+    () => setup.assistantPrompt?.replace(/\{\{callbackUrl\}\}/g, callbackUrl),
+    [setup.assistantPrompt, callbackUrl]
+  );
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
   const methods = useForm({
     mode: 'onChange',
     resolver: yupResolver(schema),
@@ -171,6 +180,49 @@ export const OAuthCredentialsSetup: FC<{
           Open {providerName} OAuth documentation
         </a>
       </div>
+
+      {!!assistantPrompt && (
+        <div className="rounded-[8px] border border-newTableBorder bg-newBgColorInner p-[16px]">
+          <div className="flex flex-wrap items-center justify-between gap-[8px]">
+            <div>
+              <div className="text-[14px] font-semibold">
+                Let an AI assistant do the setup
+              </div>
+              <p className="mt-[4px] text-[12px] leading-[18px] text-textColor/70">
+                Copy this prompt into an assistant that can drive your browser
+                (e.g. Claude in Chrome). It creates and configures the developer
+                app step by step and hands the password and secret back to you.
+              </p>
+            </div>
+            <div className="flex gap-[8px]">
+              <Button
+                type="button"
+                secondary
+                onClick={() => setPromptOpen((open) => !open)}
+              >
+                {promptOpen ? 'Hide prompt' : 'Show prompt'}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  copy(assistantPrompt);
+                  setPromptCopied(true);
+                }}
+              >
+                {promptCopied ? 'Copied' : 'Copy prompt'}
+              </Button>
+            </div>
+          </div>
+          {promptOpen && (
+            <textarea
+              readOnly
+              value={assistantPrompt}
+              onFocus={(event) => event.currentTarget.select()}
+              className="mt-[10px] h-[260px] w-full resize-y rounded-[6px] border border-newTableBorder bg-newBgColorInner p-[10px] font-mono text-[12px] leading-[18px] text-textColor outline-none"
+            />
+          )}
+        </div>
+      )}
 
       <FormProvider {...methods}>
         <form className="flex flex-col gap-[4px]" onSubmit={submit}>
