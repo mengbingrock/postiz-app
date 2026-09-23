@@ -57,6 +57,10 @@ export type PostizCloudChannelSpec = {
   cloudIdentifiers: string[]; // cloud provider identifiers that qualify
   inviteIdentifier: string; // cloud provider used for the invite link
   toolTip: string;
+  // Cloud provider identifiers that apply a custom video cover. A subset of
+  // cloudIdentifiers, because two cloud channels behind the same tile do not
+  // necessarily both support one. Omit when none of them do.
+  coverCloudIdentifiers?: string[];
 };
 
 type CloudIntegration = {
@@ -444,7 +448,28 @@ export abstract class PostizCloudProvider
 
     const image = [];
     for (const media of firstPost?.media || []) {
-      image.push(await this.importMedia(accessToken, media.path));
+      const uploaded = await this.importMedia(accessToken, media.path);
+      // A cover is only honoured by some of the cloud channels behind this
+      // tile. Refuse rather than publish a post whose cover was asked for and
+      // silently replaced by the platform's own frame.
+      if (media.thumbnail) {
+        if (
+          !this.spec.coverCloudIdentifiers?.includes(cloudIntegration.identifier)
+        ) {
+          throw new BadBody(
+            this.identifier,
+            '{}',
+            Buffer.from('{}'),
+            `The ${this.spec.channelLabel} channel connected in Postiz Cloud does not support a custom video cover.`
+          );
+        }
+        // The cloud only publishes media hosted on its own domain, so the
+        // cover has to be imported there too and referenced by its cloud path.
+        const cover = await this.importMedia(accessToken, media.thumbnail);
+        image.push({ ...uploaded, thumbnail: cover.path });
+        continue;
+      }
+      image.push(uploaded);
     }
 
     const { __type, ...settings } = (firstPost?.settings || {}) as any;

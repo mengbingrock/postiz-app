@@ -18,6 +18,9 @@ const imagePlatforms = new Set([
   'instagram',
   'instagram-standalone',
   'tiktok-business',
+  // Routed to a TikTok Business channel in Postiz Cloud; the connector refuses
+  // the post if the connected cloud channel cannot apply the cover.
+  'tiktok-cloud',
   'pinterest',
   'reddit',
   // The creator page's 编辑封面 → 上传封面 control takes a JPEG/PNG.

@@ -318,3 +318,92 @@ test('TikTok via Postiz Cloud maps the cloud post state to the workflow status',
     }
   );
 });
+
+test('TikTok via Postiz Cloud imports the cover and sends it as the media thumbnail', async () => {
+  await withFetch(
+    ({ url, init }) => {
+      if (url.endsWith('/public/v1/integrations')) return { body: cloudIntegrations };
+      if (url.endsWith('/public/v1/upload-from-url')) {
+        const { url: source } = JSON.parse(String(init?.body));
+        // The cover has to land on the cloud's own domain too, otherwise
+        // TikTok cannot fetch it from custom_thumbnail_url.
+        if (source.endsWith('cover.jpg')) {
+          return { body: { id: 'media-2', path: 'https://uploads.postiz.com/cover.jpg' } };
+        }
+        return { body: { id: 'media-1', path: 'https://uploads.postiz.com/clip.mp4' } };
+      }
+      if (url.endsWith('/public/v1/posts')) {
+        const body = JSON.parse(String(init?.body));
+        assert.deepEqual(body.posts[0].value[0].image, [
+          {
+            id: 'media-1',
+            path: 'https://uploads.postiz.com/clip.mp4',
+            thumbnail: 'https://uploads.postiz.com/cover.jpg',
+          },
+        ]);
+        return { body: [{ postId: 'cloud-post-10', integration: 'cloud-ttb-1' }] };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    },
+    async () => {
+      const [result] = await new TiktokCloudProvider().postPending(
+        'local-post',
+        'pos_token',
+        [
+          {
+            id: 'local-post',
+            message: '<p>Cover please</p>',
+            settings: { __type: 'tiktok-cloud', content_posting_method: 'DIRECT_POST' } as any,
+            media: [
+              {
+                id: 'm',
+                path: 'https://post.example.test/uploads/clip.mp4',
+                thumbnail: 'https://post.example.test/uploads/cover.jpg',
+              },
+            ],
+          },
+        ] as any,
+        { internalId: 'cloud-ttb-1' } as any
+      );
+      assert.equal(result.postId, 'cloud-post-10');
+    }
+  );
+});
+
+test('TikTok via Postiz Cloud refuses a cover the connected cloud channel cannot apply', async () => {
+  await withFetch(
+    ({ url }) => {
+      if (url.endsWith('/public/v1/integrations')) return { body: cloudIntegrations };
+      if (url.endsWith('/public/v1/upload-from-url')) {
+        return { body: { id: 'media-1', path: 'https://uploads.postiz.com/clip.mp4' } };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          new TiktokCloudProvider().postPending(
+            'local-post',
+            'pos_token',
+            [
+              {
+                id: 'local-post',
+                message: '<p>Cover please</p>',
+                settings: { __type: 'tiktok-cloud' } as any,
+                media: [
+                  {
+                    id: 'm',
+                    path: 'https://post.example.test/uploads/clip.mp4',
+                    thumbnail: 'https://post.example.test/uploads/cover.jpg',
+                  },
+                ],
+              },
+            ] as any,
+            // legacy TikTok in the cloud account: frame offset only, no cover
+            { internalId: 'cloud-tt-1' } as any
+          ),
+        (error: unknown) => error instanceof BadBody
+      );
+    }
+  );
+});
