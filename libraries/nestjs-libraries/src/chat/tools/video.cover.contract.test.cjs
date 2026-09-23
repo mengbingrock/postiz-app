@@ -86,6 +86,9 @@ function load(file, overrides = {}) {
     if (name in mocks) return mocks[name];
     if (name.startsWith('./'))
       return load(path.resolve(path.dirname(file), name + '.ts'), overrides);
+    // Real helper: the cover reader resolves first-party upload URLs to disk.
+    if (name === '@gitroom/nestjs-libraries/upload/local.upload.path')
+      return load(path.join(nest, 'upload/local.upload.path.ts'), overrides);
     if (
       name.includes('/dtos/posts/') ||
       name.includes('/database/prisma/') ||

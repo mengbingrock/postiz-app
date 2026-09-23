@@ -858,17 +858,24 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       client.setCredentials({ access_token: accessToken });
       const youtubeClient = youtube(client);
 
+      // A thumbnail uploaded to this instance is streamed from disk, like the
+      // video itself (see youtubeMediaChunk); only foreign URLs go over the
+      // SSRF-safe network path.
+      const thumbnailPath = this.localPostizMediaPath(pendingData.thumbnail);
       await this.runInConcurrent(async () =>
         youtubeClient.thumbnails.set({
           videoId,
           media: {
-            body: (
-              await this.getSsrfSafeAxios()({
-                url: pendingData.thumbnail,
-                method: 'GET',
-                responseType: 'stream',
-              })
-            ).data,
+            body:
+              thumbnailPath.indexOf('http') === 0
+                ? (
+                    await this.getSsrfSafeAxios()({
+                      url: thumbnailPath,
+                      method: 'GET',
+                      responseType: 'stream',
+                    })
+                  ).data
+                : createReadStream(thumbnailPath),
           },
         })
       );

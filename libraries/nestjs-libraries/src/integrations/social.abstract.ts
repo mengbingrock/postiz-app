@@ -12,8 +12,8 @@ import {
 } from '@gitroom/nestjs-libraries/dtos/webhooks/ssrf.safe.dispatcher';
 import sharp from 'sharp';
 import { createReadStream, statSync } from 'fs';
+import { resolveLocalUploadPath } from '@gitroom/nestjs-libraries/upload/local.upload.path';
 import { Readable } from 'stream';
-import { resolve, sep } from 'path';
 
 export type ValidityMedia = {
   path: string;
@@ -265,33 +265,7 @@ export abstract class SocialAbstract {
    * (correctly) rejected by the SSRF-safe network dispatcher.
    */
   protected localPostizMediaPath(path: string): string {
-    if (!/^https?:\/\//i.test(path)) return path;
-
-    const frontendUrl = process.env.FRONTEND_URL?.trim();
-    const uploadDirectory = process.env.UPLOAD_DIRECTORY?.trim();
-    if (!frontendUrl || !uploadDirectory) return path;
-
-    try {
-      const mediaUrl = new URL(path);
-      const frontendOrigin = new URL(frontendUrl).origin;
-      if (
-        mediaUrl.origin !== frontendOrigin ||
-        !mediaUrl.pathname.startsWith('/uploads/')
-      ) {
-        return path;
-      }
-
-      const base = resolve(uploadDirectory);
-      const candidate = resolve(
-        base,
-        decodeURIComponent(mediaUrl.pathname.slice('/uploads/'.length))
-      );
-      if (candidate === base || !candidate.startsWith(base + sep)) return path;
-
-      return statSync(candidate).isFile() ? candidate : path;
-    } catch {
-      return path;
-    }
+    return resolveLocalUploadPath(path);
   }
 
   /** Reads the pixel dimensions of an image via sharp (works for http or local paths). */
