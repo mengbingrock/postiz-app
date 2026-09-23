@@ -30,6 +30,7 @@ performed automatically. Platform aspect-ratio/account restrictions still apply.
 | TikTok Business | Existing custom_thumbnail_url or thumbnail_offset | Account/app access required; preserve zero offset |
 | Pinterest | Adapt one video-cover object to existing video + cover provider input | Single video; legacy two-attachment input unchanged |
 | Reddit | Pass existing media.thumbnail through | Provider/account restrictions still apply |
+| RedNote | Browser automation uploads the image through the creator page's 编辑封面 control | Image only, no frame timestamp; a cover that fails to apply fails the publish |
 | X, Threads, Bluesky, Mastodon, Telegram, Discord, Google Business and other providers | Normal video behavior remains provider-specific; explicit cover requests fail before any batch creates | This is a connector limitation, not a claim that each platform API lacks cover support |
 
 All explicit unsupported combinations fail before creating any post in the MCP
