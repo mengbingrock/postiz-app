@@ -9,11 +9,11 @@ const clientInformation = {
   instanceUrl: 'https://post.example.test',
 };
 
-test('Instagram Facebook Business requires a customer-owned Meta app', () => {
+test('Instagram Facebook Business supports managed or customer-owned Meta apps', () => {
   const provider = new InstagramProvider();
 
   assert.equal(provider.customOAuthCredentials, true);
-  assert.equal(provider.alwaysRequireCustomOAuthCredentials, true);
+  assert.equal(provider.alwaysRequireCustomOAuthCredentials, false);
   assert.equal(
     provider.validateCustomOAuthCredentials(clientInformation),
     undefined

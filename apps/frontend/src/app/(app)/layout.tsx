@@ -70,6 +70,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           isGeneral={!!process.env.IS_GENERAL}
           genericOauth={!!process.env.POSTIZ_GENERIC_OAUTH}
           googleAuthOnly={process.env.GOOGLE_AUTH_ONLY === 'true'}
+          metaReviewerLocalLogin={!!process.env.META_REVIEWER_EMAIL}
           oauthLogoUrl={process.env.NEXT_PUBLIC_POSTIZ_OAUTH_LOGO_URL!}
           oauthDisplayName={process.env.NEXT_PUBLIC_POSTIZ_OAUTH_DISPLAY_NAME!}
           uploadDirectory={process.env.NEXT_PUBLIC_UPLOAD_STATIC_DIRECTORY!}

@@ -16,6 +16,7 @@ import { useVariables } from '@gitroom/react/helpers/variable.context';
 import { FarcasterProvider } from '@gitroom/frontend/components/auth/providers/farcaster.provider';
 import WalletProvider from '@gitroom/frontend/components/auth/providers/wallet.provider';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
+import { useSearchParams } from 'next/navigation';
 type Inputs = {
   email: string;
   password: string;
@@ -24,6 +25,7 @@ type Inputs = {
 };
 export function Login() {
   const t = useT();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [notActivated, setNotActivated] = useState(false);
   const {
@@ -33,7 +35,11 @@ export function Login() {
     billingEnabled,
     genericOauth,
     googleAuthOnly,
+    metaReviewerLocalLogin,
   } = useVariables();
+  const showLocalLogin =
+    !googleAuthOnly ||
+    (metaReviewerLocalLogin && searchParams.get('reviewer') === 'meta');
   const resolver = useMemo(() => {
     return classValidatorResolver(LoginUserDto);
   }, []);
@@ -94,7 +100,7 @@ export function Login() {
                 {billingEnabled && <WalletProvider />}
               </div>
             )}
-            {!googleAuthOnly && (
+            {showLocalLogin && (
               <div className="h-[20px] mb-[24px] mt-[24px] relative">
                 <div className="absolute w-full h-[1px] bg-fifth top-[50%] -translate-y-[50%]" />
                 <div
@@ -104,7 +110,7 @@ export function Login() {
                 </div>
               </div>
             )}
-            {!googleAuthOnly && (
+            {showLocalLogin && (
               <div className="flex flex-col gap-[12px]">
                 <div className="text-textColor">
                   <Input

@@ -47,7 +47,7 @@ export class AuthService {
     userAgent: string,
     addToOrg?: boolean | { orgId: string; role: 'USER' | 'ADMIN'; id: string }
   ) {
-    this.assertAllowedProvider(provider);
+    this.assertAllowedProvider(provider, body.email);
 
     if (provider === Provider.LOCAL) {
       if (process.env.DISALLOW_PLUS && body.email.includes('+')) {
@@ -234,10 +234,17 @@ export class AuthService {
     return null;
   }
 
-  private assertAllowedProvider(provider: Provider | string) {
+  private assertAllowedProvider(provider: Provider | string, email?: string) {
+    const reviewerEmail = process.env.META_REVIEWER_EMAIL?.trim().toLowerCase();
+    const isMetaReviewerLogin =
+      provider === Provider.LOCAL &&
+      !!reviewerEmail &&
+      email?.trim().toLowerCase() === reviewerEmail;
+
     if (
       process.env.GOOGLE_AUTH_ONLY === 'true' &&
-      provider !== Provider.GOOGLE
+      provider !== Provider.GOOGLE &&
+      !isMetaReviewerLogin
     ) {
       throw new Error('This Postiz instance only allows Google sign-in');
     }

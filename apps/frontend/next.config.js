@@ -25,6 +25,10 @@ const nextConfig = {
   },
   reactStrictMode: false,
   transpilePackages: ['crypto-hash'],
+  // jsdom reads its browser/default-stylesheet.css at runtime. Bundling it into
+  // a server route rewrites __dirname without copying that data file, which
+  // makes production builds fail while collecting page data.
+  serverExternalPackages: ['isomorphic-dompurify', 'jsdom'],
   // Enable production sourcemaps for Sentry
   productionBrowserSourceMaps: true,
 

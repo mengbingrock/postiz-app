@@ -8,6 +8,7 @@ interface VariableContextInterface {
   isGeneral: boolean;
   genericOauth: boolean;
   googleAuthOnly: boolean;
+  metaReviewerLocalLogin?: boolean;
   oauthLogoUrl: string;
   oauthDisplayName: string;
   mcpUrl?: string;
@@ -41,6 +42,7 @@ const VariableContext = createContext({
   isGeneral: true,
   genericOauth: false,
   googleAuthOnly: false,
+  metaReviewerLocalLogin: false,
   isChatBase: false,
   oauthLogoUrl: '',
   googleAdsId: '',
