@@ -161,3 +161,31 @@ test('GMB pages reports the accounts it found when none has a location', async (
     }
   );
 });
+
+test('GMB pages blames the missing quota, not the API switch, on a 429', async () => {
+  await withFetch(
+    (url) =>
+      url.host === accountsHost
+        ? {
+            status: 429,
+            body: {
+              error: {
+                message:
+                  "Quota exceeded for quota metric 'Requests' and limit 'Requests per minute' of service 'mybusinessaccountmanagement.googleapis.com'.",
+              },
+            },
+          }
+        : { body: {} },
+    async () => {
+      await assert.rejects(
+        new GmbProvider().pages('token'),
+        (error: unknown) =>
+          error instanceof ChannelSetupError &&
+          /HTTP 429: Quota exceeded/.test(error.message) &&
+          /no Business Profile API quota/.test(error.message) &&
+          // Telling someone to enable an API they already enabled wastes a day.
+          !/Enable the "My Business/.test(error.message)
+      );
+    }
+  );
+});

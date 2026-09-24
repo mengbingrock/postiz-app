@@ -67,6 +67,15 @@ const googleErrorText = (status: number, json: any) => {
   return `HTTP ${status}${message ? `: ${message}` : ''}`;
 };
 
+// A 403 and a 429 from accounts.list need opposite actions, and saying
+// "enable the API" to someone who already enabled it sends them in circles.
+// Google answers a project with no approved Business Profile quota with 429
+// on the very first call, so that case is about the quota request, not setup.
+const accountListAdvice = (status: number) =>
+  status === 429
+    ? 'The APIs are reachable but the Cloud project has no Business Profile API quota: Google rejects the first call of the minute. Request quota for the project on the Business Profile APIs form and wait for approval; until then this channel cannot list anything. Google Business (via Postiz Cloud) needs no quota of your own.'
+    : 'Enable the "My Business Account Management API" and "My Business Business Information API" for the OAuth app\'s Cloud project, then request Business Profile API quota for it.';
+
 const clientAndGmb = (clientInformation?: ClientInformation) => {
   const credentials = resolveOAuthCredentials(
     gmbOAuthCredentialSetup,
@@ -298,7 +307,7 @@ export class GmbProvider extends SocialAbstract implements SocialProvider {
           `Google Business Profile could not list your accounts (${googleErrorText(
             status,
             json
-          )}). Enable the "My Business Account Management API" and "My Business Business Information API" for the OAuth app's Cloud project and make sure its Business Profile API quota has been approved.`
+          )}). ${accountListAdvice(status)}`
         );
       }
       accounts.push(...((json.accounts as GmbAccount[]) || []));
