@@ -16,6 +16,9 @@ export class TiktokCloudProvider extends PostizCloudProvider {
     name: 'TikTok\n(via Postiz Cloud)',
     channelLabel: 'TikTok',
     cloudIdentifiers: ['tiktok', 'tiktok-business'],
+    // Only the Business API takes a custom_thumbnail_url; legacy TikTok offers
+    // a frame offset instead, which is not a cover image.
+    coverCloudIdentifiers: ['tiktok-business'],
     inviteIdentifier: 'tiktok-business',
     toolTip:
       'Publish to TikTok through your Postiz Cloud account — no TikTok developer app review needed.',
