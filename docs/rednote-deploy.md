@@ -10,6 +10,23 @@ involved:
   browser for Xiaohongshu (小红书) and its international brand RedNote
   (rednote.com), plus ChineseInLA.
 
+## Access (SSH)
+
+Production box: AWS EC2 `3.144.175.137` (`post.truegrit.dev`), login user
+`ubuntu`, key `~/.ssh/truegrit-default-key.pem` (`chmod 600`). Add a host alias
+once so every command below runs verbatim:
+
+```
+# ~/.ssh/config
+Host truegrit
+  HostName 3.144.175.137
+  User ubuntu
+  IdentityFile ~/.ssh/truegrit-default-key.pem
+```
+
+Then just `ssh truegrit`. Without the alias, substitute
+`ssh -i ~/.ssh/truegrit-default-key.pem ubuntu@3.144.175.137` everywhere.
+
 ## Topology
 
 ```
@@ -48,14 +65,13 @@ locally and ship artifacts.
 ```bash
 # in xiaohongshu-mcp/
 GOOS=linux GOARCH=amd64 go build -o /tmp/xhs-mcp .
-scp -i ~/.ssh/truegrit-default-key.pem /tmp/xhs-mcp \
-    ubuntu@3.144.175.137:/tmp/xhs-mcp-new
+scp /tmp/xhs-mcp truegrit:/tmp/xhs-mcp-new
 ```
 
 Install (Postiz spawns one child per connected profile; the binary is shared):
 
 ```bash
-ssh … 'B=/opt/postiz/config/rednote/v2.10.1/xiaohongshu-mcp-linux-amd64;
+ssh truegrit 'B=/opt/postiz/config/rednote/v2.10.1/xiaohongshu-mcp-linux-amd64;
   cp -p "$B" "$B.backup-$(date +%Y%m%d)";      # always keep a backup
   for pid in $(pgrep -f "^$B"); do kill "$pid"; done;   # children respawn on demand
   sleep 3; cp /tmp/xhs-mcp-new "$B"; chmod 700 "$B"; md5sum "$B"'
@@ -104,9 +120,9 @@ grep -rl 'post.truegrit.dev/api' apps/frontend/.next/server | wc -l # >0
 Ship + swap (keep `.old` for rollback), then restart:
 
 ```bash
-scp -r apps/backend/dist  ubuntu@…:/opt/postiz/app/apps/backend/dist.new
-rsync -az --exclude cache apps/frontend/.next/ ubuntu@…:/opt/postiz/app/apps/frontend/.next.new/
-ssh … 'A=/opt/postiz/app;
+scp -r apps/backend/dist  truegrit:/opt/postiz/app/apps/backend/dist.new
+rsync -az --exclude cache apps/frontend/.next/ truegrit:/opt/postiz/app/apps/frontend/.next.new/
+ssh truegrit 'A=/opt/postiz/app;
   cd $A/apps/backend  && rm -rf dist.old  && mv dist  dist.old  && mv dist.new  dist
   cd $A/apps/frontend && rm -rf .next.old && mv .next .next.old && mv .next.new .next
   cp -rp .next.old/cache .next/cache 2>/dev/null
