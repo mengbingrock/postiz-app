@@ -75,11 +75,14 @@ export type McpToolResult = {
 };
 
 const DEFAULT_MCP_ENDPOINT = 'http://127.0.0.1:18060/mcp';
-// INTL creator pages routed through a customer egress connector regularly need
-// 40–55 seconds to finish their session check. Keep this below the normal MCP
-// tool timeout, but above that observed proxy path so a healthy login is not
-// abandoned immediately before publication.
-const SESSION_PREFLIGHT_TIMEOUT_MS = 90_000;
+// Creator pages routed through a customer egress connector regularly need
+// 40-55 seconds to finish their session check, and a single check has been
+// observed taking over 70 seconds on a slow connector. This must also stay
+// above the MCP server's own budget for the check: if the client gives up
+// first, the server's specific error (which names the step that timed out) is
+// replaced by a generic client abort, which is what made one of these
+// failures unreadable.
+const SESSION_PREFLIGHT_TIMEOUT_MS = 180_000;
 const SESSION_EXPIRED_MESSAGE =
   'The RedNote session has expired. Reconnect the RedNote channel before publishing.';
 const startingServers = new Map<string, Promise<void>>();
@@ -863,7 +866,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
       credentials,
       'check_login_status',
       {},
-      90_000
+      SESSION_PREFLIGHT_TIMEOUT_MS
     );
     if (/未登录|not logged in/i.test(output)) {
       throw new Error(
@@ -1203,7 +1206,7 @@ export class RedNoteProvider extends SocialAbstract implements SocialProvider {
         credentials,
         'check_login_status',
         {},
-        90_000
+        SESSION_PREFLIGHT_TIMEOUT_MS
       );
 
       if (/未登录|not logged in/i.test(output)) {
